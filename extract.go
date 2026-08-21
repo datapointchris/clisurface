@@ -2,6 +2,7 @@ package clisurface
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -20,12 +21,59 @@ const (
 	FrameworkFlat    Framework = "flat"    // no discoverable subcommands
 )
 
-// maxDepth bounds the walk. Nothing on the fleet nests four deep, and a parser
-// that mistakes an argument list for a command list would otherwise recurse
-// until the process dies — which is exactly what a Rich "Arguments" panel did.
-const maxDepth = 4
+// DefaultMaxDepth bounds the walk when [Options].MaxDepth is not set. A parser
+// that mistakes an argument list for a command list recurses until the process
+// dies, which is exactly what a Rich "Arguments" panel once did, so the walk is
+// always bounded by something. Four reaches every command in a hand-written
+// tool; a generated surface like kubectl or aws needs more.
+const DefaultMaxDepth = 4
 
 const helpTimeout = 20 * time.Second
+
+// A Runner runs a command and returns everything it printed, stdout and stderr
+// together. It returns the empty string when the command could not be run at
+// all, which is how [Extract] tells a missing binary from a quiet one.
+//
+// A non-zero exit is not a failure here. Several tools print perfectly good
+// help and then exit 1, so the status is deliberately ignored and only the
+// output is read.
+type Runner func(binary string, args ...string) string
+
+// Options control how a surface is read. The zero value is usable: it runs the
+// binary directly with color disabled, bounds the walk at [DefaultMaxDepth],
+// and keeps no help bodies.
+type Options struct {
+	// Runner runs the tool. Nil selects the default, which executes the binary
+	// with NO_COLOR, TERM=dumb and a wide COLUMNS, then strips any escape
+	// sequences that survived. Supply one to read a tool under a pty, at a
+	// chosen width, or with color preserved.
+	Runner Runner
+
+	// WithBody fills [Node].Body with each node's whole help screen. Off by
+	// default because the bytes are real: a consumer that only wants the tree
+	// should not carry every screen that produced it.
+	WithBody bool
+
+	// MaxDepth bounds how many words deep the walk goes. Zero selects
+	// [DefaultMaxDepth].
+	MaxDepth int
+}
+
+// maxDepth resolves the bound, so the zero value of Options stays meaningful.
+func (o Options) maxDepth() int {
+	if o.MaxDepth > 0 {
+		return o.MaxDepth
+	}
+	return DefaultMaxDepth
+}
+
+// runner resolves the Runner, so callers never see a nil function value.
+func (o Options) runner() Runner {
+	if o.Runner != nil {
+		return o.Runner
+	}
+	return execRunner
+}
 
 // Node is one command in a tool's tree.
 type Node struct {
@@ -35,6 +83,12 @@ type Node struct {
 	Usage    string   `json:"usage,omitempty"`
 	Flags    []string `json:"flags,omitempty"`
 	Children []*Node  `json:"children,omitempty"`
+
+	// Body is everything the node printed for --help, filled only when
+	// [Options].WithBody is set. Short, Usage and Flags are all parsed out of
+	// it, so a consumer that wants to render the screen a person would see
+	// takes this rather than reassembling it from the three.
+	Body string `json:"body,omitempty"`
 
 	// childIndex is scratch used while assembling a section-format tree, where
 	// a parent is implied by its rows rather than listed on its own.
@@ -50,7 +104,6 @@ func (n *Node) Depth() int { return len(n.Path) }
 // Tool is one binary's whole surface.
 type Tool struct {
 	Binary    string    `json:"binary"`
-	Repo      string    `json:"repo,omitempty"`
 	Framework Framework `json:"framework"`
 	Root      *Node     `json:"root"`
 }
@@ -89,48 +142,57 @@ var skip = map[string]bool{"help": true, "completion": true, "__complete": true}
 // 12-command tool into a 1992-node walk.
 var notCommandPanel = []string{"option", "argument", "usage", "flag"}
 
-type runner func(bin string, args ...string) string
-
-func execRunner(bin string, args ...string) string {
+func execRunner(binary string, args ...string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), helpTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Env = append(cmd.Environ(), "COLUMNS=200", "NO_COLOR=1", "TERM=dumb")
 	out, _ := cmd.CombinedOutput() // a non-zero exit still prints usable help
 	return ansiRe.ReplaceAllString(string(out), "")
 }
 
 // Extract reads one binary's whole command tree.
-func Extract(binary, repo string) *Tool {
-	return extractWith(binary, repo, execRunner)
+//
+// It returns an error when the binary prints nothing for --help, which is what
+// a name that is not on PATH does. Reading that as a tool with no subcommands
+// is the failure worth refusing: the result would be well formed, carry no
+// signal that anything was missing, and confidently describe a tool that does
+// not exist.
+func Extract(binary string, opts Options) (*Tool, error) {
+	run := opts.runner()
+	rootHelp := run(binary, "--help")
+	if strings.TrimSpace(rootHelp) == "" {
+		return nil, fmt.Errorf("clisurface: %q printed no help; is it on PATH?", binary)
+	}
+	t := &Tool{Binary: binary, Framework: detectFramework(binary, rootHelp, run)}
+	t.Root = build(binary, nil, "", t.Framework, opts, 0, "")
+	return t, nil
 }
 
-func extractWith(binary, repo string, run runner) *Tool {
-	fw := detectFramework(binary, run)
-	t := &Tool{Binary: binary, Repo: repo, Framework: fw}
-	t.Root = build(binary, nil, "", fw, run, 0, "")
-	return t
-}
-
-func detectFramework(binary string, run runner) Framework {
+// detectFramework takes the root help rather than fetching it, because Extract
+// has already paid for that spawn and spawning is the whole cost of a read.
+func detectFramework(binary, rootHelp string, run Runner) Framework {
 	if cobraChildren(binary, nil, run) != nil {
 		return FrameworkCobra
 	}
-	help := run(binary, "--help")
-	if strings.Contains(help, "╭─") {
+	if strings.Contains(rootHelp, "╭─") {
 		return FrameworkRich
 	}
-	if len(sectionChildren(binary, help)) > 0 {
+	if len(sectionChildren(binary, rootHelp)) > 0 {
 		return FrameworkSection
 	}
 	return FrameworkFlat
 }
 
-func build(binary string, path []string, short string, fw Framework, run runner, depth int, parentHelp string) *Node {
+func build(binary string, path []string, short string, fw Framework, opts Options, depth int, parentHelp string) *Node {
+	run := opts.runner()
 	args := append(append([]string{}, path...), "--help")
 	help := run(binary, args...)
 
 	n := &Node{Path: append([]string{}, path...), Short: short, Flags: uniqueFlags(help)}
+	if opts.WithBody {
+		n.Body = help
+	}
 	if len(path) > 0 {
 		n.Name = path[len(path)-1]
 	} else {
@@ -142,7 +204,7 @@ func build(binary string, path []string, short string, fw Framework, run runner,
 	// A tool with no per-command help answers `tool sub --help` with the root
 	// screen. Reading that as sub's own children makes every command list its
 	// siblings, at every level, forever — safekeep does exactly this.
-	if depth >= maxDepth || (parentHelp != "" && help == parentHelp) {
+	if depth >= opts.maxDepth() || (parentHelp != "" && help == parentHelp) {
 		return n
 	}
 
@@ -173,7 +235,7 @@ func build(binary string, path []string, short string, fw Framework, run runner,
 		if k.name == n.Name {
 			continue // a row echoing its own parent is a parse artifact, not a command
 		}
-		n.Children = append(n.Children, build(binary, append(append([]string{}, path...), k.name), k.desc, fw, run, depth+1, help))
+		n.Children = append(n.Children, build(binary, append(append([]string{}, path...), k.name), k.desc, fw, opts, depth+1, help))
 	}
 	return n
 }
@@ -217,7 +279,7 @@ func keepListed(kids []child, listed map[string]bool) []child {
 
 // cobraChildren asks cobra's own completion callback. Returns nil when the tool
 // is not cobra, which is also how the framework is detected.
-func cobraChildren(binary string, path []string, run runner) []child {
+func cobraChildren(binary string, path []string, run Runner) []child {
 	args := append([]string{"__complete"}, path...)
 	args = append(args, "")
 	out := run(binary, args...)

@@ -8,10 +8,21 @@ import (
 // fakeRunner answers from a map keyed by the joined arguments, so the parsers
 // are tested against captured help output rather than whatever happens to be
 // installed on the machine running the tests.
-func fakeRunner(responses map[string]string) runner {
+func fakeRunner(responses map[string]string) Runner {
 	return func(_ string, args ...string) string {
 		return responses[strings.Join(args, " ")]
 	}
+}
+
+// extract reads a fake tool, failing the test rather than returning an error,
+// so each case below reads as the parser assertion it is about.
+func extract(t *testing.T, run Runner) *Tool {
+	t.Helper()
+	tool, err := Extract("demo", Options{Runner: run})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	return tool
 }
 
 const cobraRoot = `A test tool.
@@ -35,7 +46,7 @@ func TestCobraTreeComesFromCompleteNotHelp(t *testing.T) {
 		"books show --help":      "Show one book\n\nUsage:\n  demo books show <id>\n",
 	})
 
-	tool := extractWith("demo", "", run)
+	tool := extract(t, run)
 	if tool.Framework != FrameworkCobra {
 		t.Fatalf("framework = %q, want cobra", tool.Framework)
 	}
@@ -55,7 +66,7 @@ func TestCobraLeafCarriesItsFlags(t *testing.T) {
 		"--help":           "A test tool.\n\nUsage:\n  demo [command]\n\nAvailable Commands:\n  list        List\n",
 		"list --help":      "Usage:\n  demo list [flags]\n\nFlags:\n      --json    as JSON\n      --limit int\n",
 	})
-	tool := extractWith("demo", "", run)
+	tool := extract(t, run)
 	var flags []string
 	tool.Walk(func(n *Node) { flags = n.Flags })
 	if !contains(flags, "--json") || !contains(flags, "--limit") {
@@ -74,7 +85,7 @@ func TestArgumentCompletionsAreNotSubcommands(t *testing.T) {
 		// The help of a leaf that takes an argument names no commands at all.
 		"list --help": "Usage:\n  demo list [category] [flags]\n\nFlags:\n  -h, --help   help for list\n",
 	})
-	tool := extractWith("demo", "", run)
+	tool := extract(t, run)
 
 	var paths []string
 	tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
@@ -103,7 +114,7 @@ func TestRichArgumentsPanelIsNotACommandList(t *testing.T) {
 		"search --help":       search,
 		"search query --help": search,
 	})
-	tool := extractWith("demo", "", run)
+	tool := extract(t, run)
 	if tool.Framework != FrameworkRich {
 		t.Fatalf("framework = %q, want rich", tool.Framework)
 	}
@@ -133,7 +144,7 @@ Options
 
 func TestSectionRowsKeepArgsOutAndNestMultiWord(t *testing.T) {
 	run := fakeRunner(map[string]string{"--help": sectionHelp})
-	tool := extractWith("demo", "", run)
+	tool := extract(t, run)
 	if tool.Framework != FrameworkSection {
 		t.Fatalf("framework = %q, want section", tool.Framework)
 	}
@@ -171,7 +182,7 @@ func TestIdenticalChildHelpStopsTheWalk(t *testing.T) {
 		"alpha --help":           root,
 		"beta --help":            root,
 	})
-	tool := extractWith("demo", "", run)
+	tool := extract(t, run)
 	var n int
 	tool.Walk(func(*Node) { n++ })
 	if n != 2 {
@@ -181,7 +192,7 @@ func TestIdenticalChildHelpStopsTheWalk(t *testing.T) {
 
 func TestFlatToolHasNoChildren(t *testing.T) {
 	run := fakeRunner(map[string]string{"--help": "Usage: demo [OPTIONS]\n\nOptions:\n  --clean  Clean\n"})
-	tool := extractWith("demo", "", run)
+	tool := extract(t, run)
 	if tool.Framework != FrameworkFlat {
 		t.Errorf("framework = %q, want flat", tool.Framework)
 	}
@@ -189,6 +200,86 @@ func TestFlatToolHasNoChildren(t *testing.T) {
 	tool.Walk(func(*Node) { n++ })
 	if n != 0 {
 		t.Errorf("walked %d nodes, want 0", n)
+	}
+}
+
+// A name that is not on PATH prints nothing. Reading that as a tool with no
+// subcommands is the failure worth refusing: the result is well formed, exits
+// zero, and confidently describes something that does not exist.
+func TestSilentBinaryIsAnErrorNotAnEmptyTree(t *testing.T) {
+	_, err := Extract("demo", Options{Runner: fakeRunner(nil)})
+	if err == nil {
+		t.Fatal("Extract returned no error for a binary that printed nothing")
+	}
+	if !strings.Contains(err.Error(), "demo") {
+		t.Errorf("error = %q, want it to name the binary", err)
+	}
+}
+
+func TestBodyIsKeptOnlyWhenAsked(t *testing.T) {
+	responses := map[string]string{
+		"__complete ":      "list\tList\n:4\nCompletion ended with directive: x",
+		"__complete list ": ":4\nCompletion ended with directive: x",
+		"--help":           "A test tool.\n\nUsage:\n  demo [command]\n\nAvailable Commands:\n  list        List\n",
+		"list --help":      "List things.\n\nUsage:\n  demo list [flags]\n",
+	}
+
+	off := extract(t, fakeRunner(responses))
+	if off.Root.Body != "" {
+		t.Errorf("root carries a body with WithBody unset")
+	}
+	off.Walk(func(n *Node) {
+		if n.Body != "" {
+			t.Errorf("%v carries a body with WithBody unset", n.Path)
+		}
+	})
+
+	on, err := Extract("demo", Options{Runner: fakeRunner(responses), WithBody: true})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if on.Root.Body != responses["--help"] {
+		t.Errorf("root body = %q, want the whole help screen", on.Root.Body)
+	}
+	on.Walk(func(n *Node) {
+		if n.Body == "" {
+			t.Errorf("%v carries no body with WithBody set", n.Path)
+		}
+	})
+}
+
+func TestMaxDepthBoundsTheWalk(t *testing.T) {
+	responses := map[string]string{
+		"__complete ":       "a\tA\n:4\nCompletion ended with directive: x",
+		"__complete a ":     "b\tB\n:4\nCompletion ended with directive: x",
+		"__complete a b ":   "c\tC\n:4\nCompletion ended with directive: x",
+		"__complete a b c ": ":4\nCompletion ended with directive: x",
+		"--help":            "Usage:\n  demo [command]\n\nAvailable Commands:\n  a    A\n",
+		"a --help":          "Usage:\n  demo a [command]\n\nAvailable Commands:\n  b    B\n",
+		"a b --help":        "Usage:\n  demo a b [command]\n\nAvailable Commands:\n  c    C\n",
+		"a b c --help":      "Usage:\n  demo a b c [flags]\n",
+	}
+
+	for _, tc := range []struct {
+		name  string
+		depth int
+		want  int
+	}{
+		{"zero takes the default and reaches every node", 0, 3},
+		{"one stops after the first level", 1, 1},
+		{"two stops after the second", 2, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tool, err := Extract("demo", Options{Runner: fakeRunner(responses), MaxDepth: tc.depth})
+			if err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+			var n int
+			tool.Walk(func(*Node) { n++ })
+			if n != tc.want {
+				t.Errorf("walked %d nodes at MaxDepth %d, want %d", n, tc.depth, tc.want)
+			}
+		})
 	}
 }
 
