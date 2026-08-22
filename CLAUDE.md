@@ -32,13 +32,20 @@ this library and its consumers is the decision this repo exists to hold.
   API surface rather than to the prose.
 
 - **A `Recipe` names an entry point, never a command list.** `recipe.go` holds
-  per-tool knowledge for tools no reader can reach — git and tmux today — and
-  that is not a violation of the rule above: git is every reader's git, not one
-  portfolio's. What it must never hold is *what commands a tool has*. A list
+  per-tool knowledge for tools no reader can reach — aws, direnv, git and tmux —
+  and that is not a violation of the rule above: git is every reader's git, not
+  one portfolio's. What it must never hold is *what commands a tool has*. A list
   would be stale the day the tool released, while an entry point outlives it, so
   `git switch` appeared without anything here changing. The same goes for a
   refusal: `gitNeverRead` skips one screen that costs ten seconds and still
   shows the command.
+
+- **A recipe is also where a tool is stopped from being walked.** direnv reads
+  `--help` as a path, so `direnv allow --help` authorizes a file called
+  `--help` rather than printing anything. A reader would have found those
+  commands and handed the walk a list it must not follow; a recipe says one
+  level and means it. Reading a tool better can make it more dangerous, and
+  this is where that is answered.
 
 - **A recipe is frozen and a reader is not, so a tool a reader already handles
   never gets one.** Every entry in the table earns its place by being
