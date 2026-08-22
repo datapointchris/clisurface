@@ -53,7 +53,9 @@ const (
 // Raise it through [Options] for a surface that nests further.
 const DefaultMaxDepth = 4
 
-const helpTimeout = 20 * time.Second
+// helpTimeout bounds one invocation. A var rather than a const so a test can
+// lower it; it is unexported, so nothing outside this package can.
+var helpTimeout = 20 * time.Second
 
 // pipeDelay bounds the wait after the command itself is finished. A tool that
 // daemonizes hands its stdout to a process the context cannot reach, so the
@@ -235,6 +237,7 @@ func capture(binary string, args []string, env ...string) string {
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Env = append(cmd.Environ(), env...)
 	cmd.WaitDelay = pipeDelay
+	isolateGroup(cmd)
 	out, _ := cmd.CombinedOutput() // a non-zero exit still prints usable help
 	return string(out)
 }
