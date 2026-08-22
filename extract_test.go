@@ -353,6 +353,48 @@ func TestClapReadsBothIndentsAliasesAndNesting(t *testing.T) {
 	}
 }
 
+// A tool may split its command list under headings of its own, and the split is
+// presentation rather than structure — every block holds commands.
+//
+// The last row is the guard: its description ends in "commands:", and an
+// unanchored suffix match would read it as opening a block, swallowing the
+// options below it as commands.
+const clapSplitBlocks = `Usage: demo [global options] <subcommand> [args]
+
+Main commands:
+  init      Prepare your working directory
+  apply     Create or update infrastructure
+
+All other commands:
+  fmt       Reformat your configuration
+  metadata  Metadata related commands:
+
+Global options:
+  -chdir=DIR  Switch to a different directory
+`
+
+func TestEveryCommandBlockIsRead(t *testing.T) {
+	responses := map[string]string{"--help": clapSplitBlocks}
+	for _, name := range []string{"init", "apply", "fmt", "metadata"} {
+		responses[name+" --help"] = "Usage: demo " + name + " [options]\n"
+	}
+
+	tool := extract(t, fakeRunner(responses))
+	if tool.Framework != FrameworkClap {
+		t.Fatalf("framework = %q, want clap", tool.Framework)
+	}
+
+	var paths []string
+	tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
+	want := []string{"init", "apply", "fmt", "metadata"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("paths = %v, want %v — both blocks, in screen order", paths, want)
+	}
+	if contains(paths, "-chdir=DIR") || len(paths) > len(want) {
+		t.Errorf("a row ending in \"commands:\" opened a block: %v", paths)
+	}
+}
+
 func TestClapDescriptionsSurviveTheAlias(t *testing.T) {
 	run := fakeRunner(map[string]string{
 		"--help":       clapHostile,

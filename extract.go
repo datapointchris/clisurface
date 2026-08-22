@@ -437,12 +437,28 @@ func richChildren(help string) []child {
 // about all of them. The indent is two spaces in some and four in others. The
 // block is not always first — it can sit below "Options:". And a row may carry
 // aliases after the name, as `build, b`, of which only the first is a command.
+// isCommandHeading reports whether a line opens a block of commands.
+//
+// The suffix is matched rather than the whole line, because what precedes it
+// varies: "Commands:", "SUBCOMMANDS:", and a tool that splits its list into
+// "Main commands:" and "All other commands:". A tool may open several such
+// blocks and every one of them is read.
+//
+// The heading must be unindented. Without that, a command row whose description
+// happens to end in "commands:" would open a block of its own.
+func isCommandHeading(line, trimmed string) bool {
+	if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(trimmed), "commands:")
+}
+
 func clapChildren(help string) []child {
 	var kids []child
 	inSection := false
 	for _, line := range strings.Split(help, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "Commands:" || trimmed == "SUBCOMMANDS:" {
+		if isCommandHeading(line, trimmed) {
 			inSection = true
 			continue
 		}
