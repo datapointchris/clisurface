@@ -437,6 +437,39 @@ func richChildren(help string) []child {
 // about all of them. The indent is two spaces in some and four in others. The
 // block is not always first — it can sit below "Options:". And a row may carry
 // aliases after the name, as `build, b`, of which only the first is a command.
+// commaRun reads a row that lists several commands separated by commas, which
+// is how a tool with too many to describe individually prints them.
+//
+// All or nothing per row, and every token has to be a command name. That is
+// what keeps the wrapped continuation of a long description out: prose wraps
+// without commas, and the moment one token is not a name the row is refused
+// whole rather than contributing the tokens that happened to look right.
+//
+// Descriptions are genuinely absent here rather than dropped. A tool printing
+// its commands this way has none to give at this level; each one still
+// describes itself in its own help.
+func commaRun(row string) []child {
+	parts := strings.Split(row, ",")
+	if len(parts) < 2 {
+		return nil
+	}
+	out := make([]child, 0, len(parts))
+	for _, part := range parts {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue // the trailing comma before the list wraps
+		}
+		if !isCommandName(name) {
+			return nil
+		}
+		if skip[name] {
+			continue
+		}
+		out = append(out, child{name: name})
+	}
+	return out
+}
+
 // isCommandHeading reports whether a line opens a block of commands.
 //
 // The suffix is matched rather than the whole line, because what precedes it
@@ -478,6 +511,10 @@ func clapChildren(help string) []child {
 		// named after its own last word.
 		name, desc, found := strings.Cut(trimmed, "  ")
 		if !found {
+			// No gutter, so there is no description to the right. Either the
+			// row is a comma-separated run of names, or it is the wrapped
+			// continuation of the description above it.
+			kids = append(kids, commaRun(trimmed)...)
 			continue
 		}
 		name, _, _ = strings.Cut(name, ",")

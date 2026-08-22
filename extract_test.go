@@ -395,6 +395,52 @@ func TestEveryCommandBlockIsRead(t *testing.T) {
 	}
 }
 
+// A tool with too many commands to describe individually prints them as a
+// comma-separated run, wrapped, with no descriptions.
+//
+// Three guards are in the fixture. The Usage block above holds rows shaped
+// exactly like command rows and must not be read, because no heading opened it.
+// The run carries `help`, which is generated rather than the tool's own. And
+// the last row is not a list at all — one of its tokens has a space — so it is
+// refused whole rather than contributing the tokens that looked right.
+const clapCommaRun = `demo <command>
+
+Usage:
+
+demo install        install all the dependencies
+demo test           run this project's tests
+
+All commands:
+
+    access, adduser, audit, bugs,
+    cache, help, config
+    run these, with care
+
+Specify configs in the ini-formatted file:
+    ~/.config/demo/rc
+`
+
+func TestCommandsListedAsACommaRun(t *testing.T) {
+	responses := map[string]string{"--help": clapCommaRun}
+	for _, name := range []string{"access", "adduser", "audit", "bugs", "cache", "config"} {
+		responses[name+" --help"] = "Usage: demo " + name + "\n"
+	}
+
+	tool := extract(t, fakeRunner(responses))
+	var paths []string
+	tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
+
+	want := []string{"access", "adduser", "audit", "bugs", "cache", "config"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("paths = %v, want %v", paths, want)
+	}
+	for _, unwanted := range []string{"install", "test", "help", "run", "these", "with care"} {
+		if contains(paths, unwanted) {
+			t.Errorf("%q was read as a command: %v", unwanted, paths)
+		}
+	}
+}
+
 func TestClapDescriptionsSurviveTheAlias(t *testing.T) {
 	run := fakeRunner(map[string]string{
 		"--help":       clapHostile,
