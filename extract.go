@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -179,13 +180,41 @@ var skip = map[string]bool{"help": true, "completion": true, "__complete": true}
 var notCommandPanel = []string{"option", "argument", "usage", "flag"}
 
 func execRunner(binary string, args ...string) string {
+	return capture(binary, args, "COLUMNS=200", "NO_COLOR=1", "TERM=dumb")
+}
+
+// DisplayRunner returns a [Runner] that reads a tool the way a person would see
+// it: wrapped to width, with color left intact. Pass it to [Options] when the
+// help screen is going to be rendered rather than only parsed.
+//
+// A terminal type is declared rather than inherited, so the text a consumer
+// gets does not change with the terminal it happens to run in. TERM=dumb
+// suppresses color even where FORCE_COLOR is set, which is why the default
+// runner — reading a surface to parse or diff it — sets exactly that.
+//
+// Measured against Typer, clap and cobra tools: this reproduces everything a
+// pseudo-terminal produces, so no pty is involved. Two limits are the tools'
+// own. Cobra tools emit no color under any environment or terminal. And a tool
+// that wraps its help in source ignores COLUMNS, gh being one.
+func DisplayRunner(width int) Runner {
+	return func(binary string, args ...string) string {
+		return capture(binary, args, "COLUMNS="+strconv.Itoa(width), "FORCE_COLOR=1", "CLICOLOR_FORCE=1", "TERM=xterm-256color")
+	}
+}
+
+func capture(binary string, args []string, env ...string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), helpTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Env = append(cmd.Environ(), "COLUMNS=200", "NO_COLOR=1", "TERM=dumb")
+	cmd.Env = append(cmd.Environ(), env...)
 	out, _ := cmd.CombinedOutput() // a non-zero exit still prints usable help
-	return ansiRe.ReplaceAllString(string(out), "")
+	return string(out)
 }
+
+// stripANSI removes escape sequences so a parser matches on the text rather
+// than on whatever the tool colored it with. Every reader runs on the result;
+// only [Node].Body keeps what the tool actually printed.
+func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
 
 // Extract reads one binary's whole command tree.
 //
@@ -196,7 +225,7 @@ func execRunner(binary string, args ...string) string {
 // not exist.
 func Extract(binary string, opts Options) (*Tool, error) {
 	run := limited(opts.runner(), opts.concurrency())
-	rootHelp := run(binary, "--help")
+	rootHelp := stripANSI(run(binary, "--help"))
 	if strings.TrimSpace(rootHelp) == "" {
 		return nil, fmt.Errorf("clisurface: %q printed no help; is it on PATH?", binary)
 	}
@@ -227,11 +256,12 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 
 func build(binary string, path []string, short string, fw Framework, opts Options, run Runner, depth int, parentHelp string) *Node {
 	args := append(append([]string{}, path...), "--help")
-	help := run(binary, args...)
+	raw := run(binary, args...)
+	help := stripANSI(raw)
 
 	n := &Node{Path: append([]string{}, path...), Short: short, Flags: uniqueFlags(help)}
 	if opts.WithBody {
-		n.Body = help
+		n.Body = raw
 	}
 	if len(path) > 0 {
 		n.Name = path[len(path)-1]
@@ -346,7 +376,7 @@ func keepListed(kids []child, listed map[string]bool) []child {
 func cobraChildren(binary string, path []string, run Runner) []child {
 	args := append([]string{"__complete"}, path...)
 	args = append(args, "")
-	out := run(binary, args...)
+	out := stripANSI(run(binary, args...))
 	if !strings.Contains(out, ":") || !strings.Contains(out, "Completion ended") {
 		return nil
 	}

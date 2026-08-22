@@ -368,6 +368,48 @@ func TestClapDescriptionsSurviveTheAlias(t *testing.T) {
 	}
 }
 
+// A consumer that renders a help screen wants the color the tool emitted, and
+// the parsers must not care either way. The Runner returns what the tool
+// printed; every reader normalizes; only Body keeps it.
+func TestColorDoesNotReachTheParsersButDoesReachTheBody(t *testing.T) {
+	clean := map[string]string{
+		"__complete ":      "list\tList\n:4\nCompletion ended with directive: x",
+		"__complete list ": ":4\nCompletion ended with directive: x",
+		"--help":           "A test tool.\n\nUsage:\n  demo [command]\n\nAvailable Commands:\n  list        List\n",
+		"list --help":      "List things.\n\nUsage:\n  demo list [flags]\n",
+	}
+	// Color every response, including the completion callback, so the readers
+	// are proven rather than merely unexercised.
+	colored := map[string]string{}
+	for k, v := range clean {
+		colored[k] = strings.ReplaceAll(v, "list", "\x1b[1;36mlist\x1b[0m")
+	}
+
+	paths := func(tool *Tool) string {
+		var got []string
+		tool.Walk(func(n *Node) { got = append(got, strings.Join(n.Path, " ")) })
+		return strings.Join(got, ",")
+	}
+
+	plain := extract(t, fakeRunner(clean))
+	fancy, err := Extract("demo", Options{Runner: fakeRunner(colored), WithBody: true})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if paths(plain) != paths(fancy) {
+		t.Errorf("colored tree = %q, want the same as plain %q", paths(fancy), paths(plain))
+	}
+	if !strings.Contains(fancy.Root.Body, "\x1b[") {
+		t.Error("root body lost the color the tool printed")
+	}
+	fancy.Walk(func(n *Node) {
+		if n.Short != "List" {
+			t.Errorf("%v short = %q, want the description without escapes", n.Path, n.Short)
+		}
+	})
+}
+
 // A name that is not on PATH prints nothing. Reading that as a tool with no
 // subcommands is the failure worth refusing: the result is well formed, exits
 // zero, and confidently describes something that does not exist.

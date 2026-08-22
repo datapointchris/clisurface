@@ -24,9 +24,13 @@ this library and its consumers is the decision this repo exists to hold.
 
 - **The core takes no third-party dependencies; anything that needs one gets its
   own package.** `repo-structure.md` binds containment rather than a blanket
-  ban, so a consumer importing the core inherits nothing. `clisurface/pty` is
-  that split — running a tool under a pty needs a dependency, and forge does not
-  want it.
+  ban, so a consumer importing the core inherits nothing.
+
+  Nothing has needed the split yet. A `clisurface/pty` package was planned, for
+  reading a tool's help the way a person sees it, and the measurement killed it:
+  `COLUMNS`, `FORCE_COLOR` and a declared `TERM` reproduce everything a
+  pseudo-terminal produces. `DisplayRunner` is stdlib-only as a result. Measure
+  before reaching for a dependency here.
 
 - **Every reader gets a hostile fixture.** A parser change can silently *reduce*
   coverage, and the failure looks like a tool that legitimately has no
