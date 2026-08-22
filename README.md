@@ -20,22 +20,37 @@ This library reads surfaces. It has no opinion about them.
 
 ## How it reads
 
-Two sources, in order of trust:
+Three sources, in order of trust:
 
 - **The framework's own completion callback**, where one exists. Cobra answers
   `__complete` with an exact command list. This is machine-readable and is never
-  guessed at.
+  guessed at. It is probed only once the help screen names a command section,
+  because an argument is not inert on a tool that takes free text.
 - **The rendered `--help` screen**, otherwise. Typer and Click draw box panels,
-  clap writes indented rows under a `Commands:` heading, and a hand-rolled
+  clap writes indented rows under a `Commands:` heading, Python's argparse lists
+  brace-wrapped choices under `positional arguments:`, and a hand-rolled
   renderer writes them under an underlined one. Each shape has a reader.
+- **A hand-written recipe**, for a tool no reader can reach. `git --help` lists
+  its commands under prose headings and `git <cmd> --help` opens a man page, so
+  git is read from `git help -a` and `git <cmd> -h` instead. `tmux --help` names
+  no commands at all, so tmux is read from `tmux list-commands`.
 
-Where both are available they are intersected, because a completion callback
-answers with argument values as readily as with subcommand names, and only a
-name the help screen also presents as a command survives.
+Where both of the first two are available they are intersected, because a
+completion callback answers with argument values as readily as with subcommand
+names, and only a name the help screen also presents as a command survives.
+
+A recipe names an **entry point**, never a command list. A list would be stale
+the day the tool released; an entry point outlives it, so a new subcommand
+appears without the table changing.
 
 **A bare subcommand is never run.** The shape most worth finding is a noun that
 performs a read when invoked with no verb, and detecting it by running it would
 fire real reads against APIs and databases.
+
+That bounds what this library asks for, not what a tool does when asked.
+Answering `--help` means starting the program, so a group callback, an update
+check or a lazily cloned config repo all happen before help is printed. A caller
+that browses arbitrary tools should keep its own list of ones not to start.
 
 ## Reading a tool
 
