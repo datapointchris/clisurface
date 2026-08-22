@@ -582,7 +582,13 @@ func headingChildren(help string) []child {
 			continue
 		}
 		if !strings.HasPrefix(line, " ") {
-			inSection = false // an unindented heading ends the block
+			// Only a heading ends the block, and the colon is what marks one.
+			// zk groups its commands under bare unindented labels — NOTEBOOK,
+			// NOTES — and closing on any unindented line dropped every command
+			// underneath them. "Flags:" still closes it.
+			if strings.HasSuffix(trimmed, ":") {
+				inSection = false
+			}
 			continue
 		}
 		// The two-space gutter is required rather than optional: it is what

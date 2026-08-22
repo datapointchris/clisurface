@@ -306,6 +306,60 @@ func TestTheRootHelpIsReadOnce(t *testing.T) {
 	}
 }
 
+// zk groups its commands under bare unindented labels inside the block. Ending
+// the block at any unindented line dropped every command underneath them, so it
+// read as a tool with no commands at all.
+func TestABareLabelDoesNotEndACommandBlock(t *testing.T) {
+	help := "Usage: demo <command>\n\n" +
+		"Commands:\n\n" +
+		"NOTEBOOK\n  A notebook is a directory\n\n" +
+		"  init      Create a notebook\n" +
+		"  index     Index the notes\n\n" +
+		"NOTES\n  Edit or browse your notes\n\n" +
+		"  new       Create a note\n" +
+		"  list      List notes\n\n" +
+		"Flags:\n" +
+		"  -h, --help   Show help\n"
+
+	run := fakeRunner(map[string]string{
+		"--help":       help,
+		"init --help":  "Usage: demo init\n",
+		"index --help": "Usage: demo index\n",
+		"new --help":   "Usage: demo new\n",
+		"list --help":  "Usage: demo list\n",
+	})
+	tool := extract(t, run)
+
+	var got []string
+	tool.Walk(func(n *Node) { got = append(got, n.Name) })
+	want := "init,index,new,list"
+	if strings.Join(got, ",") != want {
+		t.Errorf("commands = %v, want %v", got, want)
+	}
+}
+
+// "Flags:" ends the block and its rows are not commands. Without the colon
+// test, everything under it would be read as one.
+func TestASectionHeadingStillEndsACommandBlock(t *testing.T) {
+	help := "Usage: demo <command>\n\n" +
+		"Commands:\n" +
+		"  run       Run it\n\n" +
+		"Options:\n" +
+		"  verbose   Be loud\n"
+
+	run := fakeRunner(map[string]string{
+		"--help":     help,
+		"run --help": "Usage: demo run\n",
+	})
+	tool := extract(t, run)
+
+	var got []string
+	tool.Walk(func(n *Node) { got = append(got, n.Name) })
+	if strings.Join(got, ",") != "run" {
+		t.Errorf("commands = %v, want [run] — an Options row was read as a command", got)
+	}
+}
+
 // wideCobra builds a root with n leaf children, so a concurrency bound has
 // something to be exceeded on.
 func wideCobra(n int) map[string]string {
