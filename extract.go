@@ -36,6 +36,11 @@ const (
 	// library, because npm and terraform are read by it too.
 	FrameworkHeading Framework = "heading"
 
+	// FrameworkArgparse is Python's standard library: subcommands listed under
+	// "positional arguments:" as a brace-wrapped set of choices, then one
+	// indented row each.
+	FrameworkArgparse Framework = "argparse"
+
 	// FrameworkFlat is a tool presenting no subcommands at all.
 	FrameworkFlat Framework = "flat"
 )
@@ -293,6 +298,9 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	if len(headingChildren(rootHelp)) > 0 {
 		return FrameworkHeading
 	}
+	if len(argparseChildren(rootHelp)) > 0 {
+		return FrameworkArgparse
+	}
 	return FrameworkFlat
 }
 
@@ -350,6 +358,8 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 		kids = richChildren(help)
 	case FrameworkHeading:
 		kids = headingChildren(help)
+	case FrameworkArgparse:
+		kids = argparseChildren(help)
 	case FrameworkSection, FrameworkFlat:
 		kids = nil
 	}
@@ -564,6 +574,54 @@ func isCommandHeading(line, trimmed string) bool {
 		return false
 	}
 	return strings.HasSuffix(strings.ToLower(trimmed), "commands:")
+}
+
+// argparseChildren reads Python argparse's subparser block.
+//
+// The block is an unindented "positional arguments:", then the choices wrapped
+// in braces, then one indented row per subcommand.
+//
+// The brace line is what makes it a subcommand list rather than an ordinary
+// argument, and requiring it is the whole guard. `pre-commit --help` and
+// `pre-commit run --help` both write "positional arguments:"; only the first
+// follows it with choices, and the second names a single argument called hook.
+func argparseChildren(help string) []child {
+	lines := strings.Split(help, "\n")
+	for i, line := range lines {
+		if line != "positional arguments:" {
+			continue
+		}
+		choices := i + 1
+		for choices < len(lines) && strings.TrimSpace(lines[choices]) == "" {
+			choices++
+		}
+		if choices >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[choices]), "{") {
+			return nil
+		}
+
+		var kids []child
+		for _, row := range lines[choices+1:] {
+			if strings.TrimSpace(row) == "" {
+				continue
+			}
+			if !strings.HasPrefix(row, "    ") {
+				break // "options:" and every other section is unindented
+			}
+			// A wrapped continuation of the choices carries no gutter, which is
+			// what keeps "gc,hazmat,migrate-config}" out.
+			name, desc, found := strings.Cut(strings.TrimSpace(row), "  ")
+			if !found {
+				continue
+			}
+			name = strings.TrimSpace(name)
+			if !isCommandName(name) || skip[name] {
+				continue
+			}
+			kids = append(kids, child{name, strings.TrimSpace(desc)})
+		}
+		return kids
+	}
+	return nil
 }
 
 func headingChildren(help string) []child {

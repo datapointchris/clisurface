@@ -360,6 +360,42 @@ func TestASectionHeadingStillEndsACommandBlock(t *testing.T) {
 	}
 }
 
+// argparse writes "positional arguments:" for a subcommand set and for a plain
+// argument alike. The brace-wrapped choices are the only thing separating them,
+// so a tool taking one positional must not read as a tool with one subcommand.
+func TestArgparseReadsSubparsersAndNotAPlainPositional(t *testing.T) {
+	root := "usage: demo [-h] {run,clean} ...\n\n" +
+		"positional arguments:\n" +
+		"  {run,clean}\n" +
+		"    run                 Run hooks.\n" +
+		"    clean               Clean out files.\n" +
+		"    help                Show help for a specific command.\n" +
+		"\n" +
+		"options:\n" +
+		"  -h, --help            show this help message and exit\n"
+
+	// A leaf naming one argument, which is the shape that must not recurse.
+	run := "usage: demo run [-h] [hook]\n\n" +
+		"positional arguments:\n" +
+		"  hook                  A single hook-id to run\n"
+
+	tool := extract(t, fakeRunner(map[string]string{
+		"--help":       root,
+		"run --help":   run,
+		"clean --help": "usage: demo clean [-h]\n",
+	}))
+	if tool.Framework != FrameworkArgparse {
+		t.Fatalf("framework = %q, want argparse", tool.Framework)
+	}
+
+	var got []string
+	tool.Walk(func(n *Node) { got = append(got, strings.Join(n.Path, " ")) })
+	want := "run,clean"
+	if strings.Join(got, ",") != want {
+		t.Errorf("commands = %v, want %v — \"help\" is generated, and hook is an argument", got, want)
+	}
+}
+
 // wideCobra builds a root with n leaf children, so a concurrency bound has
 // something to be exceeded on.
 func wideCobra(n int) map[string]string {
