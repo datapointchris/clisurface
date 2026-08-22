@@ -18,11 +18,26 @@ import (
 type Framework string
 
 const (
-	FrameworkCobra   Framework = "cobra"
-	FrameworkRich    Framework = "rich"    // typer/click, box-drawn panels
-	FrameworkSection Framework = "section" // hand-rolled help, an underlined "Commands" heading
-	FrameworkClap    Framework = "clap"    // rust/clap, a "Commands:" heading
-	FrameworkFlat    Framework = "flat"    // no discoverable subcommands
+	// FrameworkCobra is read from the tool's own completion callback rather
+	// than from a screen, which is the only source here that is not scraped.
+	FrameworkCobra Framework = "cobra"
+
+	// FrameworkRich is typer/click: commands in box-drawn panels.
+	FrameworkRich Framework = "rich"
+
+	// FrameworkSection is a bare "Commands" heading under an underline rule,
+	// with the whole tree on the root screen and no help per command, so it is
+	// assembled in one pass rather than walked.
+	FrameworkSection Framework = "section"
+
+	// FrameworkHeading is a heading ending in "commands:" followed by indented
+	// rows, with help at every level, so it is walked. clap writes it, and so
+	// do tools with no relation to clap — the name is the shape rather than any
+	// library, because npm and terraform are read by it too.
+	FrameworkHeading Framework = "heading"
+
+	// FrameworkFlat is a tool presenting no subcommands at all.
+	FrameworkFlat Framework = "flat"
 )
 
 // DefaultMaxDepth bounds the walk when [Options].MaxDepth is not set.
@@ -253,9 +268,9 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 		return FrameworkSection
 	}
 	// After section, because that format writes a bare "Commands" heading with
-	// an underline rule where clap writes "Commands:" with none.
-	if len(clapChildren(rootHelp)) > 0 {
-		return FrameworkClap
+	// an underline rule where this one writes "…commands:" and no rule.
+	if len(headingChildren(rootHelp)) > 0 {
+		return FrameworkHeading
 	}
 	return FrameworkFlat
 }
@@ -305,8 +320,8 @@ func build(binary string, path []string, short string, fw Framework, opts Option
 		kids = keepListed(cobraChildren(binary, path, run), helpCommandNames(help))
 	case FrameworkRich:
 		kids = richChildren(help)
-	case FrameworkClap:
-		kids = clapChildren(help)
+	case FrameworkHeading:
+		kids = headingChildren(help)
 	case FrameworkSection, FrameworkFlat:
 		kids = nil
 	}
@@ -426,17 +441,20 @@ func richChildren(help string) []child {
 	return kids
 }
 
-// clapChildren reads the clap shape: a "Commands:" heading, then indented rows
-// until an unindented line ends the block.
+// headingChildren reads a heading ending in "commands:", then the indented rows
+// under it, until an unindented line ends the block.
 //
 // Unlike the section format this is walked rather than assembled in one pass,
-// because clap gives every group its own help screen carrying its own
-// "Commands:".
+// because a tool writing this shape gives every group its own help screen
+// carrying its own heading.
 //
-// Three things are deliberately not pinned, because clap's own tools disagree
-// about all of them. The indent is two spaces in some and four in others. The
-// block is not always first — it can sit below "Options:". And a row may carry
-// aliases after the name, as `build, b`, of which only the first is a command.
+// Nothing about the rows is pinned, because the tools writing this shape
+// disagree about all of it. The indent is two spaces in some and four in
+// others. The block is not always first — it can sit below "Options:", and a
+// tool may open several under headings of its own. A row may carry aliases
+// after the name, as `build, b`, of which only the first is a command. And a
+// row may carry no description at all, listing several commands separated by
+// commas instead.
 // commaRun reads a row that lists several commands separated by commas, which
 // is how a tool with too many to describe individually prints them.
 //
@@ -486,7 +504,7 @@ func isCommandHeading(line, trimmed string) bool {
 	return strings.HasSuffix(strings.ToLower(trimmed), "commands:")
 }
 
-func clapChildren(help string) []child {
+func headingChildren(help string) []child {
 	var kids []child
 	inSection := false
 	for _, line := range strings.Split(help, "\n") {

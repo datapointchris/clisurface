@@ -285,11 +285,11 @@ func TestChildOrderSurvivesConcurrency(t *testing.T) {
 	}
 }
 
-// clapHostile carries every variation measured across uv, cargo, rustup and
+// headingHostile carries every variation measured across uv, cargo, rustup and
 // ruff: a four-space indent, aliases after the name, the block sitting below
 // Options: rather than first, a wrapped description continuation, a generated
 // `help` row, and a further block after it.
-const clapHostile = `A test tool.
+const headingHostile = `A test tool.
 
 Usage: demo [OPTIONS] [COMMAND]
 
@@ -307,9 +307,9 @@ Cache options:
   -n, --no-cache    Avoid the cache
 `
 
-// clapNested indents by two where the root indents by four, which is the
+// headingNested indents by two where the root indents by four, which is the
 // disagreement between uv and cargo inside one tree.
-const clapNested = `Run and install commands
+const headingNested = `Run and install commands
 
 Usage: demo tool [OPTIONS] <COMMAND>
 
@@ -323,17 +323,17 @@ Global options:
 
 func TestClapReadsBothIndentsAliasesAndNesting(t *testing.T) {
 	run := fakeRunner(map[string]string{
-		"--help":           clapHostile,
+		"--help":           headingHostile,
 		"build --help":     "Compile the current package\n\nUsage: demo build [OPTIONS]\n\nOptions:\n      --release  Build optimized\n",
 		"check --help":     "Analyze the current package\n\nUsage: demo check [OPTIONS]\n",
-		"tool --help":      clapNested,
+		"tool --help":      headingNested,
 		"tool run --help":  "Run a command\n\nUsage: demo tool run <NAME>\n",
 		"tool list --help": "List installed tools\n\nUsage: demo tool list\n",
 	})
 
 	tool := extract(t, run)
-	if tool.Framework != FrameworkClap {
-		t.Fatalf("framework = %q, want clap", tool.Framework)
+	if tool.Framework != FrameworkHeading {
+		t.Fatalf("framework = %q, want heading", tool.Framework)
 	}
 
 	var paths []string
@@ -359,7 +359,7 @@ func TestClapReadsBothIndentsAliasesAndNesting(t *testing.T) {
 // The last row is the guard: its description ends in "commands:", and an
 // unanchored suffix match would read it as opening a block, swallowing the
 // options below it as commands.
-const clapSplitBlocks = `Usage: demo [global options] <subcommand> [args]
+const headingSplitBlocks = `Usage: demo [global options] <subcommand> [args]
 
 Main commands:
   init      Prepare your working directory
@@ -374,14 +374,14 @@ Global options:
 `
 
 func TestEveryCommandBlockIsRead(t *testing.T) {
-	responses := map[string]string{"--help": clapSplitBlocks}
+	responses := map[string]string{"--help": headingSplitBlocks}
 	for _, name := range []string{"init", "apply", "fmt", "metadata"} {
 		responses[name+" --help"] = "Usage: demo " + name + " [options]\n"
 	}
 
 	tool := extract(t, fakeRunner(responses))
-	if tool.Framework != FrameworkClap {
-		t.Fatalf("framework = %q, want clap", tool.Framework)
+	if tool.Framework != FrameworkHeading {
+		t.Fatalf("framework = %q, want heading", tool.Framework)
 	}
 
 	var paths []string
@@ -403,7 +403,7 @@ func TestEveryCommandBlockIsRead(t *testing.T) {
 // The run carries `help`, which is generated rather than the tool's own. And
 // the last row is not a list at all — one of its tokens has a space — so it is
 // refused whole rather than contributing the tokens that looked right.
-const clapCommaRun = `demo <command>
+const headingCommaRun = `demo <command>
 
 Usage:
 
@@ -421,7 +421,7 @@ Specify configs in the ini-formatted file:
 `
 
 func TestCommandsListedAsACommaRun(t *testing.T) {
-	responses := map[string]string{"--help": clapCommaRun}
+	responses := map[string]string{"--help": headingCommaRun}
 	for _, name := range []string{"access", "adduser", "audit", "bugs", "cache", "config"} {
 		responses[name+" --help"] = "Usage: demo " + name + "\n"
 	}
@@ -443,7 +443,7 @@ func TestCommandsListedAsACommaRun(t *testing.T) {
 
 func TestClapDescriptionsSurviveTheAlias(t *testing.T) {
 	run := fakeRunner(map[string]string{
-		"--help":       clapHostile,
+		"--help":       headingHostile,
 		"build --help": "Usage: demo build\n",
 		"check --help": "Usage: demo check\n",
 		"tool --help":  "Usage: demo tool\n",
