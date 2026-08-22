@@ -27,8 +27,9 @@ this library and its consumers is the decision this repo exists to hold.
   registry, never resolves a repo to a binary, and holds no opinion about
   whether a verb was well chosen. Those are questions about *one portfolio's*
   CLIs; this answers questions about *a* CLI. A consumer passes in a binary
-  name and gets a tree back. The test is whether the package would still make
-  sense to a reader who has never seen the tools that consume it.
+  name and gets a tree back. That is `standards/documentation.md` § "A repo is
+  a product for a stranger; the fleet is one deployment of it" applied to the
+  API surface rather than to the prose.
 
 - **A `Recipe` names an entry point, never a command list.** `recipe.go` holds
   per-tool knowledge for tools no reader can reach — git and tmux today — and
@@ -61,11 +62,9 @@ this library and its consumers is the decision this repo exists to hold.
   without a fixture pinning its shape is a reader nothing will notice breaking.
 
 - **The `go.mod` floor matches the house declaration, not the lowest version
-  the code needs.** Generated CI reads the floor from `go.mod`, pins
-  `GOTOOLCHAIN=local`, then installs golangci-lint, which carries its own
-  minimum — so a floor below that fails Lint on a repo whose code is fine. A
-  library would otherwise floor lower than a tool; here they match, and that is
-  the reason.
+  the code needs** — `standards/go.md` § "Go version floor, and the toolchain
+  that is not the same question" is why a library cannot floor below the
+  generated CI's bottom.
 
 ## Rules that live elsewhere
 
@@ -75,9 +74,9 @@ not restated here.
 
 ## Sanctioned exceptions
 
-- **No goreleaser.** There is no binary to build, upload or install. A consumer
-  resolves this by module path and tag, so `release.yml` cuts the tag and there
-  is nothing else to ship.
+- **No goreleaser**, per `standards/release.md` § "Go — go-semantic-release +
+  goreleaser", which drops that half for a library. `release.yml` still cuts the
+  tag, because the tag is what a consumer resolves.
 
 ## Never write the breaking-change trailer in a commit message
 
