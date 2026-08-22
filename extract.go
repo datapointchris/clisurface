@@ -25,11 +25,17 @@ const (
 	FrameworkFlat    Framework = "flat"    // no discoverable subcommands
 )
 
-// DefaultMaxDepth bounds the walk when [Options].MaxDepth is not set. A parser
-// that mistakes an argument list for a command list recurses until the process
-// dies, which is exactly what a Rich "Arguments" panel once did, so the walk is
-// always bounded by something. Four reaches every command in a hand-written
-// tool; a generated surface like kubectl or aws needs more.
+// DefaultMaxDepth bounds the walk when [Options].MaxDepth is not set.
+//
+// The bound exists because a parser that mistakes an argument list for a
+// command list recurses until the process dies, which is exactly what a Rich
+// "Arguments" panel once did. The walk is therefore always bounded by
+// something, whatever the number is.
+//
+// Four is generous rather than tight. Measured across cobra, clap and Typer
+// tools including kubectl, docker and gh, the deepest surface is three words
+// past the binary, and raising the bound to eight changes no tree at all.
+// Raise it through [Options] for a surface that nests further.
 const DefaultMaxDepth = 4
 
 const helpTimeout = 20 * time.Second
