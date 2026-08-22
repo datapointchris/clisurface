@@ -261,6 +261,9 @@ func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
 // not exist.
 func Extract(binary string, opts Options) (*Tool, error) {
 	run := limited(opts.runner(), opts.concurrency())
+	if r, ok := recipeFor(binary); ok {
+		return extractByRecipe(binary, r, opts, run)
+	}
 	rootRaw := run(binary, "--help")
 	rootHelp := stripANSI(rootRaw)
 	if strings.TrimSpace(rootHelp) == "" {

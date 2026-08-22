@@ -30,6 +30,21 @@ this library and its consumers is the decision this repo exists to hold.
   name and gets a tree back. The test is whether the package would still make
   sense to a reader who has never seen the tools that consume it.
 
+- **A `Recipe` names an entry point, never a command list.** `recipe.go` holds
+  per-tool knowledge for tools no reader can reach — git and tmux today — and
+  that is not a violation of the rule above: git is every reader's git, not one
+  portfolio's. What it must never hold is *what commands a tool has*. A list
+  would be stale the day the tool released, while an entry point outlives it, so
+  `git switch` appeared without anything here changing. The same goes for a
+  refusal: `gitNeverRead` skips one screen that costs ten seconds and still
+  shows the command.
+
+- **A recipe is frozen and a reader is not, so a tool a reader already handles
+  never gets one.** Every entry in the table earns its place by being
+  unreachable otherwise, and the fleet sweep in
+  `~/tools/helpnav/.planning/sweep/` is what proves it — run it before and after
+  and diff every framework and node count.
+
 - **The core takes no third-party dependencies; anything that needs one gets its
   own package.** What binds is containment rather than a blanket ban, so a
   consumer importing the core inherits nothing.
