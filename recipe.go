@@ -58,9 +58,10 @@ type Recipe struct {
 // already handles must not appear here, because a recipe is frozen knowledge
 // and a reader is not.
 var recipes = map[string]Recipe{
-	"aws":  awsRecipe,
-	"git":  gitRecipe,
-	"tmux": tmuxRecipe,
+	"aws":    awsRecipe,
+	"direnv": direnvRecipe,
+	"git":    gitRecipe,
+	"tmux":   tmuxRecipe,
 }
 
 // recipeFor returns the recipe for a binary, if the table holds one.
@@ -285,6 +286,75 @@ var awsRecipe = Recipe{
 			}
 			seen[name] = true
 			kids = append(kids, child{name, ""})
+		}
+		return kids
+	},
+}
+
+// direnv ----------------------------------------------------------------------
+
+// direnvRecipe reads direnv, and stops the walk before it can do harm.
+//
+// The shape is its own. Rows are unindented, carry their argument spec, end in
+// a colon, and several aliases share one description written underneath:
+//
+//	Available commands
+//	------------------
+//	allow [PATH_TO_RC]:
+//	permit [PATH_TO_RC]:
+//	grant [PATH_TO_RC]:
+//	  Grants direnv permission to load the given .envrc or .env file.
+//
+// One level, and that is the point rather than a limitation. direnv has no
+// per-command help and reads `--help` as a path: `direnv allow --help` does not
+// print anything, it tries to allow a file called "--help". A reader that found
+// these commands and then walked into them would be authorizing files.
+//
+// So this is a recipe rather than a reader. A reader would hand the walk a list
+// of commands it must not follow.
+var direnvRecipe = Recipe{
+	MaxDepth: 1,
+	Help: func(binary string, path []string) (string, []string) {
+		if len(path) > 0 {
+			return "", nil
+		}
+		return binary, []string{"--help"}
+	},
+	Children: func(path []string, help string) []child {
+		if len(path) > 0 {
+			return nil
+		}
+		var kids []child
+		// An alias group shares one description, so the names collected since
+		// the last description all take the next one.
+		var pending []int
+		inSection := false
+		for _, line := range strings.Split(help, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || isRule(trimmed) {
+				continue
+			}
+			if !strings.HasPrefix(line, " ") {
+				if !strings.HasSuffix(trimmed, ":") {
+					inSection = strings.HasSuffix(strings.ToLower(trimmed), "commands")
+					continue
+				}
+				if !inSection {
+					continue
+				}
+				name, _, _ := strings.Cut(trimmed, " ")
+				name = strings.TrimSuffix(name, ":")
+				if !isCommandName(name) || skip[name] {
+					continue
+				}
+				pending = append(pending, len(kids))
+				kids = append(kids, child{name: name})
+				continue
+			}
+			for _, i := range pending {
+				kids[i].desc = trimmed
+			}
+			pending = nil
 		}
 		return kids
 	},

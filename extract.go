@@ -41,6 +41,12 @@ const (
 	// indented row each.
 	FrameworkArgparse Framework = "argparse"
 
+	// FrameworkTraitlets is IPython's application framework, which every
+	// jupyter binary is built on: a "Subcommands" heading over a rule, then one
+	// bare command per line at column zero, each with an optional indented
+	// description below it.
+	FrameworkTraitlets Framework = "traitlets"
+
 	// FrameworkFlat is a tool presenting no subcommands at all.
 	FrameworkFlat Framework = "flat"
 )
@@ -311,6 +317,9 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	if len(argparseChildren(rootHelp)) > 0 {
 		return FrameworkArgparse
 	}
+	if len(traitletsChildren(rootHelp)) > 0 {
+		return FrameworkTraitlets
+	}
 	return FrameworkFlat
 }
 
@@ -370,6 +379,8 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 		kids = headingChildren(w.binary, help)
 	case FrameworkArgparse:
 		kids = argparseChildren(help)
+	case FrameworkTraitlets:
+		kids = traitletsChildren(help)
 	case FrameworkSection, FrameworkFlat:
 		kids = nil
 	}
@@ -650,6 +661,55 @@ func argparseChildren(help string) []child {
 		return kids
 	}
 	return nil
+}
+
+// traitletsChildren reads IPython's application framework, which every jupyter
+// binary is built on.
+//
+//	Subcommands
+//	===========
+//	Subcommands are launched as `lab cmd [args]`. For information on using
+//	subcommand 'cmd', do: `lab cmd -h`.
+//
+//	build
+//	clean
+//	  Delete the build files.
+//
+// A heading is a line the next line underlines. That is what opens the block
+// and what closes it — "Options" over its own rule ends the commands.
+//
+// Inside, a command is an unindented line of exactly one word. The prose above
+// them is unindented too, and every line of it carries spaces, which is the
+// whole of the distinction. Descriptions are indented and optional: jupyter-lab
+// writes none at all while ipython writes one under each.
+func traitletsChildren(help string) []child {
+	lines := strings.Split(help, "\n")
+	var kids []child
+	inSection := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		underlined := i+1 < len(lines) && trimmed != "" && isRule(strings.TrimSpace(lines[i+1]))
+
+		if underlined {
+			inSection = strings.EqualFold(trimmed, "subcommands")
+			continue
+		}
+		if !inSection || trimmed == "" || isRule(trimmed) {
+			continue
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			// The description of the command above it, which several tools omit.
+			if len(kids) > 0 && kids[len(kids)-1].desc == "" {
+				kids[len(kids)-1].desc = trimmed
+			}
+			continue
+		}
+		if strings.ContainsAny(trimmed, " \t") || !isCommandName(trimmed) || skip[trimmed] {
+			continue // the prose above the list, every line of which has spaces
+		}
+		kids = append(kids, child{name: trimmed})
+	}
+	return kids
 }
 
 func headingChildren(binary, help string) []child {

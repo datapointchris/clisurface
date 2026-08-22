@@ -888,3 +888,46 @@ func TestAColonNamespacedCommandIsNotNestedUnderItsTopic(t *testing.T) {
 		t.Errorf("paths = %v, want agents,api — a colon command was nested under its topic", paths)
 	}
 }
+
+// traitlets is IPython's application framework and every jupyter binary is
+// built on it. A command is an unindented line of one word; the prose above the
+// list is unindented too, and carries spaces, which is the whole distinction.
+func TestTraitletsReadsBareCommandsAndNotTheProseAboveThem(t *testing.T) {
+	root := "Subcommands\n" +
+		"===========\n" +
+		"Subcommands are launched as `lab cmd [args]`. For information on using\n" +
+		"subcommand 'cmd', do: `lab cmd -h`.\n" +
+		"\n" +
+		"build\n" +
+		"clean\n" +
+		"  Delete the build files.\n" +
+		"\n" +
+		"Options\n" +
+		"=======\n" +
+		"debug\n"
+	run := fakeRunner(map[string]string{
+		"--help":       root,
+		"build --help": "usage: demo build\n",
+		"clean --help": "usage: demo clean\n",
+	})
+
+	tool := extract(t, run)
+	if tool.Framework != FrameworkTraitlets {
+		t.Fatalf("framework = %q, want traitlets", tool.Framework)
+	}
+	got := map[string]string{}
+	tool.Walk(func(n *Node) { got[n.Name] = n.Short })
+
+	if len(got) != 2 {
+		t.Errorf("commands = %v, want build and clean only", keys(got))
+	}
+	if _, ok := got["debug"]; ok {
+		t.Error("a word under Options was read as a command; its own rule ends the block")
+	}
+	if got["clean"] != "Delete the build files." {
+		t.Errorf("clean description = %q, want the indented line below it", got["clean"])
+	}
+	if got["build"] != "" {
+		t.Errorf("build description = %q, want none — jupyter-lab writes none", got["build"])
+	}
+}

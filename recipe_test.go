@@ -262,3 +262,43 @@ func TestExtractAtReadsWhatTheFirstWalkLeftUnread(t *testing.T) {
 		t.Errorf("operations = %v, want ls,cp,sync", names)
 	}
 }
+
+// direnv writes its rows unindented with an argument spec and a trailing colon,
+// and several aliases share one description written underneath them.
+func TestDirenvSharesOneDescriptionAcrossAnAliasGroup(t *testing.T) {
+	help := "Usage: direnv COMMAND [...ARGS]\n\n" +
+		"Available commands\n" +
+		"------------------\n" +
+		"allow [PATH_TO_RC]:\n" +
+		"permit [PATH_TO_RC]:\n" +
+		"  Grants direnv permission to load the given .envrc file.\n" +
+		"edit [PATH_TO_RC]:\n" +
+		"  Opens PATH_TO_RC into an $EDITOR.\n"
+
+	kids := direnvRecipe.Children(nil, help)
+	got := map[string]string{}
+	for _, k := range kids {
+		got[k.name] = k.desc
+	}
+	if len(got) != 3 {
+		t.Fatalf("commands = %v, want allow, permit and edit", got)
+	}
+	if got["allow"] != got["permit"] || got["allow"] == "" {
+		t.Errorf("the alias group did not share its description: %v", got)
+	}
+	if got["edit"] == got["allow"] {
+		t.Error("edit took the group's description instead of its own")
+	}
+}
+
+// direnv reads --help as a path, so `direnv allow --help` does not print
+// anything — it tries to allow a file called "--help". The walk must never
+// descend, which is why direnv is a recipe rather than a reader.
+func TestDirenvIsNeverWalkedBelowItsTopLevel(t *testing.T) {
+	if name, _ := direnvRecipe.Help("direnv", []string{"allow"}); name != "" {
+		t.Errorf("direnv would run `allow --help`, which authorizes a file called --help")
+	}
+	if name, args := direnvRecipe.Help("direnv", nil); name != "direnv" || strings.Join(args, " ") != "--help" {
+		t.Errorf("root -> (%q, %v), want direnv --help", name, args)
+	}
+}
