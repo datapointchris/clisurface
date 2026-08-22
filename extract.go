@@ -55,6 +55,12 @@ const DefaultMaxDepth = 4
 
 const helpTimeout = 20 * time.Second
 
+// pipeDelay bounds the wait after the command itself is finished. A tool that
+// daemonizes hands its stdout to a process the context cannot reach, so the
+// read blocks on an EOF that never arrives. wl-copy does this and stalled a
+// walk for as long as it was left running.
+const pipeDelay = 2 * time.Second
+
 // A Runner runs a command and returns everything it printed, stdout and stderr
 // together. It returns the empty string when the command could not be run at
 // all, which is how [Extract] tells a missing binary from a quiet one.
@@ -228,6 +234,7 @@ func capture(binary string, args []string, env ...string) string {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Env = append(cmd.Environ(), env...)
+	cmd.WaitDelay = pipeDelay
 	out, _ := cmd.CombinedOutput() // a non-zero exit still prints usable help
 	return string(out)
 }
@@ -258,7 +265,7 @@ func Extract(binary string, opts Options) (*Tool, error) {
 // detectFramework takes the root help rather than fetching it, because Extract
 // has already paid for that spawn and spawning is the whole cost of a read.
 func detectFramework(binary, rootHelp string, run Runner) Framework {
-	if cobraChildren(binary, nil, run) != nil {
+	if listsCommands(rootHelp) && cobraChildren(binary, nil, run) != nil {
 		return FrameworkCobra
 	}
 	if strings.Contains(rootHelp, "╭─") {
@@ -394,6 +401,10 @@ func keepListed(kids []child, listed map[string]bool) []child {
 
 // cobraChildren asks cobra's own completion callback. Returns nil when the tool
 // is not cobra, which is also how the framework is detected.
+//
+// The root call is gated on [listsCommands]. Detecting by probe means running
+// every tool with an argument it may not implement, and a tool that takes free
+// text acts on that argument instead of rejecting it.
 func cobraChildren(binary string, path []string, run Runner) []child {
 	args := append([]string{"__complete"}, path...)
 	args = append(args, "")
@@ -497,6 +508,35 @@ func commaRun(row string) []child {
 //
 // The heading must be unindented. Without that, a command row whose description
 // happens to end in "commands:" would open a block of its own.
+// listsCommands reports whether a help screen names a command section at all.
+//
+// It gates the __complete probe, and an argument is the reason it has to. A
+// token handed to a tool that does not implement it is not inert: wl-copy
+// takes free text, so probing it wrote "__complete" to the clipboard and left
+// a daemon holding the pipe. A tool that lists no commands has nothing the
+// probe could tell us, and is exactly the tool the probe can damage.
+//
+// Deliberately broader than [isCommandHeading], which requires the colon. gh
+// writes "CORE COMMANDS" and is still cobra. The two-space test rejects a row
+// wearing a heading's suffix, npm's "npm -l   display usage info for all
+// commands" being the one that matches by accident.
+func listsCommands(help string) bool {
+	for _, line := range strings.Split(help, "\n") {
+		if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "  ") {
+			continue
+		}
+		lower := strings.ToLower(strings.TrimSuffix(trimmed, ":"))
+		if strings.HasSuffix(lower, "commands") {
+			return true
+		}
+	}
+	return false
+}
+
 func isCommandHeading(line, trimmed string) bool {
 	if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 		return false

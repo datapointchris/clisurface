@@ -207,6 +207,66 @@ func TestFlatToolHasNoChildren(t *testing.T) {
 	}
 }
 
+// recordingRunner answers like fakeRunner and keeps every argument list it was
+// asked for, so a test can assert about a command that was never run.
+func recordingRunner(responses map[string]string, seen *[]string) Runner {
+	return func(_ string, args ...string) string {
+		key := strings.Join(args, " ")
+		*seen = append(*seen, key)
+		return responses[key]
+	}
+}
+
+// A tool that lists no commands must never be handed __complete. The argument
+// is not inert on a tool that takes free text: wl-copy read it as clipboard
+// content, wrote it, and daemonized holding the pipe.
+func TestProbeIsNeverRunOnAToolThatListsNoCommands(t *testing.T) {
+	var seen []string
+	run := recordingRunner(map[string]string{
+		"--help": "Usage: demo [options] text...\n\nOptions:\n  -p, --primary  Use the primary selection\n",
+	}, &seen)
+
+	tool := extract(t, run)
+	if tool.Framework != FrameworkFlat {
+		t.Errorf("framework = %q, want flat", tool.Framework)
+	}
+	for _, args := range seen {
+		if strings.HasPrefix(args, "__complete") {
+			t.Fatalf("probed with %q; a tool listing no commands must not be probed (ran: %v)", args, seen)
+		}
+	}
+}
+
+// gh heads its list "CORE COMMANDS" with no colon and is still cobra, so the
+// gate cannot require the colon that isCommandHeading does.
+func TestHeadingWithoutAColonStillEarnsTheProbe(t *testing.T) {
+	run := fakeRunner(map[string]string{
+		"--help":           "USAGE\n  demo <command>\n\nCORE COMMANDS\n  auth:  Authenticate\n",
+		"__complete ":      "auth\tAuthenticate\n:4\nCompletion ended with directive: x",
+		"__complete auth ": ":4\nCompletion ended with directive: x",
+		"auth --help":      "Authenticate\n\nUSAGE\n  demo auth\n",
+	})
+
+	tool := extract(t, run)
+	if tool.Framework != FrameworkCobra {
+		t.Fatalf("framework = %q, want cobra", tool.Framework)
+	}
+}
+
+// A row is not a heading. npm writes "npm -l   display usage info for all
+// commands" unindented, which wears the suffix the gate looks for.
+func TestACommandRowIsNotACommandHeading(t *testing.T) {
+	if listsCommands("Usage: demo <command>\n\nnpm -l   display usage info for all commands\n") {
+		t.Error("a row ending in \"commands\" was read as a command heading")
+	}
+	if !listsCommands("Usage: demo\n\nCommands:\n  go   Go\n") {
+		t.Error("a bare \"Commands:\" heading was not read as one")
+	}
+	if listsCommands("Usage: demo\n\n  Indented Commands:\n") {
+		t.Error("an indented heading was read as one")
+	}
+}
+
 // wideCobra builds a root with n leaf children, so a concurrency bound has
 // something to be exceeded on.
 func wideCobra(n int) map[string]string {

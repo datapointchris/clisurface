@@ -14,6 +14,15 @@ this library and its consumers is the decision this repo exists to hold.
   detecting it by running it would fire real reads against production APIs and
   databases. This is the invariant the whole library is trusted on.
 
+- **The completion callback is probed only after the help screen names a
+  command section.** The callback is the invariant's one exception, and
+  detecting a framework by probing for it meant handing every tool an argument
+  it might not implement. An argument is not inert on a tool that takes free
+  text. Measured 2026-08-21: `wl-copy __complete` wrote `__complete` to the
+  clipboard, then daemonized holding the stdout pipe, which stalled the walk
+  until the process was killed by hand. `listsCommands` gates it, and the tool
+  it protects is the one the probe could never have helped.
+
 - **No consumer's own knowledge reaches this package.** It never reads a repo
   registry, never resolves a repo to a binary, and holds no opinion about
   whether a verb was well chosen. Those are questions about *one portfolio's*
