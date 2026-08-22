@@ -3,6 +3,7 @@ package clisurface
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -40,6 +41,15 @@ type Recipe struct {
 	// MaxDepth bounds this tool alone, for a surface too large to walk whole.
 	// Zero leaves [Options].MaxDepth in charge.
 	MaxDepth int
+
+	// LazyBelow is the depth at which children stop being read up front. A node
+	// at or below it is returned with [Node].Unread set and no children, for a
+	// caller to fill with [ExtractAt] when someone actually looks at it.
+	//
+	// Zero disables it and the whole tree is read. aws sets 1: reading every
+	// service costs 438 calls and twelve seconds, and reading one costs 175ms,
+	// so a person browsing three services pays half a second rather than twelve.
+	LazyBelow int
 }
 
 // recipes is the table, keyed by binary name.
@@ -48,6 +58,7 @@ type Recipe struct {
 // already handles must not appear here, because a recipe is frozen knowledge
 // and a reader is not.
 var recipes = map[string]Recipe{
+	"aws":  awsRecipe,
 	"git":  gitRecipe,
 	"tmux": tmuxRecipe,
 }
@@ -95,6 +106,57 @@ func extractByRecipe(binary string, r Recipe, opts Options, run Runner) (*Tool, 
 	return t, nil
 }
 
+// ExtractAt reads the tree below one command path, for filling in a node that
+// came back with [Node].Unread set.
+//
+// The returned node is that command, with its own children read the way Extract
+// would have read them. It carries the path it was asked for, so a caller can
+// splice it in place of the stub it replaces.
+//
+// Only tools read by a [Recipe] produce unread nodes today; for anything else
+// this reads the subtree just the same, which is what makes it safe to call
+// without first asking how a tool was read.
+func ExtractAt(binary string, path []string, opts Options) (*Node, error) {
+	run := limited(opts.runner(), opts.concurrency())
+	r, ok := recipeFor(binary)
+	if !ok {
+		tool, err := Extract(binary, opts)
+		if err != nil {
+			return nil, err
+		}
+		found := findNode(tool.Root, path)
+		if found == nil {
+			return nil, fmt.Errorf("clisurface: %q has no command %q", binary, strings.Join(path, " "))
+		}
+		return found, nil
+	}
+
+	depth := opts.maxDepth()
+	if r.MaxDepth > 0 && r.MaxDepth < depth {
+		depth = r.MaxDepth
+	}
+	// LazyBelow is deliberately ignored here. This call is the moment the caller
+	// asked for those children, so stopping again where the first walk stopped
+	// would return the same stub and never make progress.
+	r.LazyBelow = 0
+	return buildByRecipe(binary, r, opts, run, path, "", len(path), depth, ""), nil
+}
+
+func findNode(n *Node, path []string) *Node {
+	if n == nil {
+		return nil
+	}
+	if len(path) == 0 {
+		return n
+	}
+	for _, c := range n.Children {
+		if c.Name == path[0] {
+			return findNode(c, path[1:])
+		}
+	}
+	return nil
+}
+
 func buildByRecipe(binary string, r Recipe, opts Options, run Runner, path []string, short string, level, maxDepth int, prefetched string) *Node {
 	raw := prefetched
 	if raw == "" {
@@ -124,10 +186,18 @@ func buildByRecipe(binary string, r Recipe, opts Options, run Runner, path []str
 	n.Children = make([]*Node, len(real))
 	var wg sync.WaitGroup
 	for i, k := range real {
+		childPath := append(append([]string{}, path...), k.name)
+		if r.LazyBelow > 0 && level+1 >= r.LazyBelow {
+			// Named but not read. Reading every one of aws's 438 services costs
+			// twelve seconds for a screen showing one of them.
+			stub := recipeNode(binary, childPath, k.desc, "", opts)
+			stub.Unread = true
+			n.Children[i] = stub
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			childPath := append(append([]string{}, path...), k.name)
 			n.Children[i] = buildByRecipe(binary, r, opts, run, childPath, k.desc, level+1, maxDepth, "")
 		}()
 	}
@@ -150,6 +220,74 @@ func recipeNode(binary string, path []string, short, raw string, opts Options) *
 		n.Usage = strings.TrimSpace(m[1])
 	}
 	return n
+}
+
+// aws ------------------------------------------------------------------------
+
+// awsCompleter is the program that lists aws's commands. It ships with the CLI
+// and is on PATH beside it.
+const awsCompleter = "aws_completer"
+
+// awsDepth is how far aws nests: `aws <service> <operation>`, and below an
+// operation the completer answers with flags rather than commands. Measured —
+// `aws ec2 describe-instances ` offers --instance-ids and its siblings.
+const awsDepth = 2
+
+// awsRecipe reads aws through its own completion callback.
+//
+// `aws --help` is an error: it prints "the following arguments are required:
+// command" and points at `aws help`, which renders a groff man page listing
+// services as bullets with no descriptions. So neither of the walk's two
+// assumptions holds.
+//
+// aws_completer is a completion callback, the same mechanism cobra's __complete
+// is, and reading it runs no command. It takes COMP_LINE and COMP_POINT rather
+// than argv, which is what `env` is for here: [Runner] passes no environment,
+// and env(1) is on every machine this runs on, so the recipe needs no change to
+// the Runner contract to reach it.
+//
+// The tree is 438 services over 19,292 operations, and reading it costs one
+// call per service rather than one per operation, because a node at awsDepth is
+// not read at all. There are no descriptions anywhere in a completion reply, so
+// the tree carries names only — enough to leave with the command, which is what
+// browsing is for.
+var awsRecipe = Recipe{
+	MaxDepth: awsDepth,
+	// A service's operations are read when someone opens that service. Reading
+	// all 438 up front takes twelve seconds; reading one takes 175ms.
+	LazyBelow: 1,
+	Help: func(_ string, path []string) (string, []string) {
+		if len(path) >= awsDepth {
+			return "", nil // below an operation the completer answers with flags
+		}
+		// The completer reads the line as a shell would present it: the words
+		// typed so far and a trailing space, with the cursor at the end.
+		line := "aws"
+		for _, word := range path {
+			line += " " + word
+		}
+		line += " "
+		return "env", []string{
+			"COMP_LINE=" + line,
+			"COMP_POINT=" + strconv.Itoa(len(line)),
+			awsCompleter,
+		}
+	},
+	Children: func(_ []string, out string) []child {
+		var kids []child
+		seen := map[string]bool{}
+		for _, line := range strings.Split(out, "\n") {
+			name := strings.TrimSpace(line)
+			// isCommandName refuses a leading dash, which is what keeps the
+			// flags an operation completes with out of the tree.
+			if !isCommandName(name) || skip[name] || seen[name] {
+				continue
+			}
+			seen[name] = true
+			kids = append(kids, child{name, ""})
+		}
+		return kids
+	},
 }
 
 // git ------------------------------------------------------------------------

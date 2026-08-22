@@ -161,6 +161,13 @@ type Node struct {
 	// takes this rather than reassembling it from the three.
 	Body string `json:"body,omitempty"`
 
+	// Unread marks a command that was named but not read, so its children are
+	// missing rather than absent. Call [ExtractAt] with its Path to read them.
+	//
+	// A surface can be too large to read whole: aws is 438 services over 19,292
+	// operations, and reading all of it costs twelve seconds to show one screen.
+	Unread bool `json:"unread,omitempty"`
+
 	// childIndex is scratch used while assembling a section-format tree, where
 	// a parent is implied by its rows rather than listed on its own.
 	childIndex map[string]*Node

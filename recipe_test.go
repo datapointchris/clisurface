@@ -158,3 +158,107 @@ func TestARecipeToolReportsItWasReadByOne(t *testing.T) {
 		}
 	}
 }
+
+// aws drives its completer through env(1) because Runner passes no environment
+// and aws_completer reads COMP_LINE rather than argv. The line is what a shell
+// would present: the words typed so far and a trailing space, cursor at the end.
+func TestAwsAsksItsCompleterTheWayAShellWould(t *testing.T) {
+	name, args := awsRecipe.Help("aws", nil)
+	if name != "env" {
+		t.Errorf("root runs %q, want env", name)
+	}
+	want := "COMP_LINE=aws  COMP_POINT=4 aws_completer"
+	if got := strings.Join(args, " "); got != want {
+		t.Errorf("root args = %q, want %q", got, want)
+	}
+
+	_, args = awsRecipe.Help("aws", []string{"s3"})
+	want = "COMP_LINE=aws s3  COMP_POINT=7 aws_completer"
+	if got := strings.Join(args, " "); got != want {
+		t.Errorf("s3 args = %q, want %q", got, want)
+	}
+
+	// Below an operation the completer answers with flags, so it is not asked.
+	if name, _ := awsRecipe.Help("aws", []string{"ec2", "describe-instances"}); name != "" {
+		t.Errorf("aws would be asked below an operation, and gets flags back")
+	}
+}
+
+// A completion reply below an operation is flags. Reading those as commands
+// would turn every operation into a node with a --dash child.
+func TestAwsKeepsFlagsOutOfTheTree(t *testing.T) {
+	reply := "--instance-ids\n--include-managed-resources\ndescribe-instances\n\ndescribe-instances\n"
+	var names []string
+	for _, k := range awsRecipe.Children(nil, reply) {
+		names = append(names, k.name)
+	}
+	if strings.Join(names, ",") != "describe-instances" {
+		t.Errorf("children = %v, want only describe-instances", names)
+	}
+}
+
+// A surface too large to read whole names its children without reading them.
+// Reading all 438 of aws's services costs twelve seconds to show one screen.
+func TestALazyRecipeNamesChildrenWithoutReadingThem(t *testing.T) {
+	var asked []string
+	run := func(_ string, args ...string) string {
+		line := ""
+		for _, a := range args {
+			if strings.HasPrefix(a, "COMP_LINE=") {
+				line = strings.TrimPrefix(a, "COMP_LINE=")
+			}
+		}
+		asked = append(asked, line)
+		if line == "aws " {
+			return "s3\nec2\n"
+		}
+		return "ls\ncp\n"
+	}
+
+	tool, err := Extract("aws", Options{Runner: run})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if len(tool.Root.Children) != 2 {
+		t.Fatalf("read %d services, want 2", len(tool.Root.Children))
+	}
+	for _, c := range tool.Root.Children {
+		if !c.Unread {
+			t.Errorf("%q was read up front; it must be named and left unread", c.Name)
+		}
+		if len(c.Children) != 0 {
+			t.Errorf("%q carries children it should not have read", c.Name)
+		}
+	}
+	if len(asked) != 1 {
+		t.Errorf("asked the completer %d times, want 1: %v", len(asked), asked)
+	}
+}
+
+// ExtractAt is the moment the caller asked for those children, so it must not
+// stop again where the first walk stopped.
+func TestExtractAtReadsWhatTheFirstWalkLeftUnread(t *testing.T) {
+	run := func(_ string, args ...string) string {
+		for _, a := range args {
+			if a == "COMP_LINE=aws s3 " {
+				return "ls\ncp\nsync\n"
+			}
+		}
+		return ""
+	}
+
+	node, err := ExtractAt("aws", []string{"s3"}, Options{Runner: run})
+	if err != nil {
+		t.Fatalf("ExtractAt: %v", err)
+	}
+	if node.Name != "s3" {
+		t.Errorf("name = %q, want s3", node.Name)
+	}
+	var names []string
+	for _, c := range node.Children {
+		names = append(names, c.Name)
+	}
+	if strings.Join(names, ",") != "ls,cp,sync" {
+		t.Errorf("operations = %v, want ls,cp,sync", names)
+	}
+}
