@@ -37,11 +37,56 @@ name the help screen also presents as a command survives.
 performs a read when invoked with no verb, and detecting it by running it would
 fire real reads against APIs and databases.
 
-## Consuming it
+## Reading a tool
 
 ```go
-import "github.com/datapointchris/clisurface"
+tool, err := clisurface.Extract("uv", clisurface.Options{})
+if err != nil {
+    return err
+}
+tool.Walk(func(n *clisurface.Node) {
+    fmt.Println(strings.Join(n.Path, " "), "—", n.Short)
+})
 ```
 
-Usage lands here once the API is settled rather than before, so that every
-example in this file has been run as written.
+`Options{}` is usable as it stands. It runs the binary with color disabled and
+a wide terminal, reads sibling commands concurrently across the machine's CPUs,
+bounds the walk at four words deep, and keeps no help bodies.
+
+Each field changes one of those:
+
+```go
+clisurface.Options{
+    Runner:      clisurface.DisplayRunner(90), // keep color, wrap to 90 columns
+    WithBody:    true,                         // keep each node's whole help screen
+    MaxDepth:    6,                            // a generated surface nests deeper
+    Concurrency: 4,                            // bound the tools running at once
+}
+```
+
+`Node.Body` is what the tool printed, escapes included. `Short`, `Usage` and
+`Flags` are parsed out of the same text with the escapes removed, so a reader
+never has to care which runner produced it.
+
+Reading is bounded by the *tool's* startup, not by this walk. A cobra tool
+answers `--help` in about 4ms and a Python one in about 200ms, so concurrency is
+the only thing that moves the total: `gh` at 229 nodes takes 2.5s rather than
+13s.
+
+## Keeping a surface to subtract from later
+
+```go
+before, err := clisurface.Save(dir, []*clisurface.Tool{tool}, time.Now())
+...
+loaded, err := clisurface.Load(dir, before.Version)
+...
+diff := clisurface.Compare(loaded, &clisurface.Snapshot{Tools: current})
+clisurface.WriteDiff(os.Stdout, diff)
+```
+
+A command or flag that was there and is not is a broken contract for whatever
+called it, which is why a surface is worth keeping around to subtract from.
+
+Every function takes the directory rather than resolving one, so where snapshots
+live stays the consumer's decision. A snapshot with no version labels itself
+`live`, so a saved reading can be compared against the tool as it is now.
