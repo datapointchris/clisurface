@@ -305,7 +305,7 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	}
 	// After section, because that format writes a bare "Commands" heading with
 	// an underline rule where this one writes "…commands:" and no rule.
-	if len(headingChildren(rootHelp)) > 0 {
+	if len(headingChildren(binary, rootHelp)) > 0 {
 		return FrameworkHeading
 	}
 	if len(argparseChildren(rootHelp)) > 0 {
@@ -367,7 +367,7 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 	case FrameworkRich:
 		kids = richChildren(help)
 	case FrameworkHeading:
-		kids = headingChildren(help)
+		kids = headingChildren(w.binary, help)
 	case FrameworkArgparse:
 		kids = argparseChildren(help)
 	case FrameworkSection, FrameworkFlat:
@@ -577,13 +577,22 @@ func listsCommands(help string) bool {
 // "Main commands:" and "All other commands:". A tool may open several such
 // blocks and every one of them is read.
 //
-// The heading must be unindented. Without that, a command row whose description
-// happens to end in "commands:" would open a block of its own.
+// The colon is optional. oclif writes "COMMANDS" in caps with none, and ten
+// tools in a corpus of popular npm CLIs — eas, netlify, ntl, nypm, ipx among
+// them — read as flat tools while it was required.
+//
+// The heading must be unindented, and must be the whole line. Without the first
+// a description ending in "commands:" opens a block; without the second so does
+// terraform's row "metadata  Metadata related commands:", which is why the
+// gutter is what separates a heading from a row.
 func isCommandHeading(line, trimmed string) bool {
 	if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 		return false
 	}
-	return strings.HasSuffix(strings.ToLower(trimmed), "commands:")
+	if strings.Contains(trimmed, "  ") || strings.Contains(trimmed, "\t") {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(trimmed, ":")), "commands")
 }
 
 // argparseChildren reads Python argparse's subparser block.
@@ -634,7 +643,7 @@ func argparseChildren(help string) []child {
 	return nil
 }
 
-func headingChildren(help string) []child {
+func headingChildren(binary, help string) []child {
 	var kids []child
 	inSection := false
 	for _, line := range strings.Split(help, "\n") {
@@ -672,13 +681,39 @@ func headingChildren(help string) []child {
 			continue
 		}
 		name, _, _ = strings.Cut(name, ",")
-		name = strings.TrimSpace(name)
-		if !isCommandName(name) || skip[name] {
+		name = commandFromRow(name, binary)
+		if name == "" || skip[name] {
 			continue
 		}
 		kids = append(kids, child{name, strings.TrimSpace(desc)})
 	}
 	return kids
+}
+
+// commandFromRow reads the command out of the left half of a row, which carries
+// more than the name in three real shapes.
+//
+// yargs repeats the whole invocation — "nyc instrument <input> [output]" — and
+// oclif's netlify decorates each row with a shell prompt, "$ blobs". Both were
+// refused outright as names, and ten tools in a corpus of popular npm CLIs read
+// as flat between them, nyc, metro, newman, cdk and netlify among them.
+//
+// The argument spec is dropped by keeping leading command words and stopping at
+// the first placeholder, which is what the section reader already does: "sync
+// push" stays two words while "run [options] <collection>" becomes one.
+func commandFromRow(left, binary string) string {
+	left = strings.TrimSpace(left)
+	left = strings.TrimPrefix(left, "$ ")
+	left = strings.TrimPrefix(left, binary+" ")
+
+	var words []string
+	for _, w := range strings.Fields(left) {
+		if !isCommandName(w) {
+			break
+		}
+		words = append(words, w)
+	}
+	return strings.Join(words, " ")
 }
 
 // sectionTree assembles the whole tree from the root screen's rows. A row may

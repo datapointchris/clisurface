@@ -783,3 +783,86 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+// oclif heads its list "COMMANDS" in caps with no colon, and decorates each row
+// with a shell prompt. Ten tools in a corpus of popular npm CLIs read as flat
+// while the colon was required — eas, netlify, ntl, nypm and ipx among them.
+func TestAnOclifScreenIsRead(t *testing.T) {
+	root := "USAGE\n  $ demo [COMMAND]\n\n" +
+		"COMMANDS\n" +
+		"  $ blobs       Manage objects\n" +
+		"  $ build       Build locally\n"
+	run := fakeRunner(map[string]string{
+		"--help":       root,
+		"blobs --help": "USAGE\n  $ demo blobs\n",
+		"build --help": "USAGE\n  $ demo build\n",
+	})
+
+	tool := extract(t, run)
+	var got []string
+	tool.Walk(func(n *Node) { got = append(got, n.Name) })
+	if strings.Join(got, ",") != "blobs,build" {
+		t.Errorf("commands = %v, want blobs,build", got)
+	}
+}
+
+// yargs repeats the whole invocation in every row, so the name parsed as three
+// words and was refused. nyc, metro, newman and cdk all read as flat for it.
+func TestARowRepeatingTheBinaryAndItsArgumentsIsRead(t *testing.T) {
+	root := "Commands:\n" +
+		"  demo instrument <input> [output]  instruments a file\n" +
+		"  demo check-coverage               check thresholds\n"
+	run := fakeRunner(map[string]string{
+		"--help":                root,
+		"instrument --help":     "usage: demo instrument\n",
+		"check-coverage --help": "usage: demo check-coverage\n",
+	})
+
+	tool := extract(t, run)
+	got := map[string]string{}
+	tool.Walk(func(n *Node) { got[n.Name] = n.Short })
+	if _, ok := got["instrument"]; !ok {
+		t.Errorf("instrument missing; got %v", keys(got))
+	}
+	if got["check-coverage"] != "check thresholds" {
+		t.Errorf("description = %q, want the row's text", got["check-coverage"])
+	}
+}
+
+// An argument spec after the name is not part of the name. playerctl writes
+// "position [OFFSET][+/-]" and lost six of its thirteen commands to it, while a
+// genuinely two-word command must still arrive whole.
+func TestAnArgumentSpecIsNotPartOfTheCommandName(t *testing.T) {
+	cases := []struct{ row, want string }{
+		{"position [OFFSET][+/-]", "position"},
+		{"metadata [KEY...]", "metadata"},
+		{"open [URI]", "open"},
+		{"sync push", "sync push"},
+		{"demo instrument <input>", "instrument"},
+		{"$ blobs", "blobs"},
+		{"--json", ""},
+	}
+	for _, c := range cases {
+		if got := commandFromRow(c.row, "demo"); got != c.want {
+			t.Errorf("commandFromRow(%q) = %q, want %q", c.row, got, c.want)
+		}
+	}
+}
+
+// The colon became optional, so the gutter is the only thing left separating a
+// heading from a row that happens to end in "commands".
+func TestARowEndingInCommandsIsStillNotAHeading(t *testing.T) {
+	for _, row := range []string{
+		"metadata  Metadata related commands:",
+		"npm -l             display usage info for all commands",
+	} {
+		if isCommandHeading(row, strings.TrimSpace(row)) {
+			t.Errorf("%q opened a command block", row)
+		}
+	}
+	for _, heading := range []string{"COMMANDS", "Commands:", "Available Commands:", "CORE COMMANDS"} {
+		if !isCommandHeading(heading, heading) {
+			t.Errorf("%q did not open a command block", heading)
+		}
+	}
+}
