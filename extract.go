@@ -502,34 +502,26 @@ func commaRun(row string) []child {
 	return out
 }
 
-// isCommandHeading reports whether a line opens a block of commands.
-//
-// The suffix is matched rather than the whole line, because what precedes it
-// varies: "Commands:", "SUBCOMMANDS:", and a tool that splits its list into
-// "Main commands:" and "All other commands:". A tool may open several such
-// blocks and every one of them is read.
-//
-// The heading must be unindented. Without that, a command row whose description
-// happens to end in "commands:" would open a block of its own.
 // listsCommands reports whether a help screen names a command section at all.
 //
 // It gates the __complete probe, and an argument is the reason it has to. A
-// token handed to a tool that does not implement it is not inert: wl-copy
-// takes free text, so probing it wrote "__complete" to the clipboard and left
-// a daemon holding the pipe. A tool that lists no commands has nothing the
-// probe could tell us, and is exactly the tool the probe can damage.
+// token handed to a tool that does not implement it is not inert: wl-copy takes
+// free text, so probing it wrote "__complete" to the clipboard and left a
+// daemon holding the pipe. A tool that lists no commands has nothing the probe
+// could tell us, and is exactly the tool the probe can damage.
 //
-// Deliberately broader than [isCommandHeading], which requires the colon. gh
-// writes "CORE COMMANDS" and is still cobra. The two-space test rejects a row
-// wearing a heading's suffix, npm's "npm -l   display usage info for all
-// commands" being the one that matches by accident.
+// Deliberately broader than [isCommandHeading] in both directions it can be.
+// The colon is optional, because gh writes "CORE COMMANDS" and is still cobra.
+// Indentation is allowed, because sesh centers its "COMMANDS" heading inside a
+// styled box and is still cobra.
+//
+// What replaces the indent test is the gutter: a heading is the whole line,
+// while a row carries a description after two or more spaces. That is what
+// keeps terraform's "metadata  Metadata related commands:" out.
 func listsCommands(help string) bool {
 	for _, line := range strings.Split(help, "\n") {
-		if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
-			continue
-		}
 		trimmed := strings.TrimSpace(line)
-		if strings.Contains(trimmed, "  ") {
+		if trimmed == "" || strings.Contains(trimmed, "  ") || strings.Contains(trimmed, "\t") {
 			continue
 		}
 		lower := strings.ToLower(strings.TrimSuffix(trimmed, ":"))
@@ -540,6 +532,15 @@ func listsCommands(help string) bool {
 	return false
 }
 
+// isCommandHeading reports whether a line opens a block of commands.
+//
+// The suffix is matched rather than the whole line, because what precedes it
+// varies: "Commands:", "SUBCOMMANDS:", and a tool that splits its list into
+// "Main commands:" and "All other commands:". A tool may open several such
+// blocks and every one of them is read.
+//
+// The heading must be unindented. Without that, a command row whose description
+// happens to end in "commands:" would open a block of its own.
 func isCommandHeading(line, trimmed string) bool {
 	if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 		return false

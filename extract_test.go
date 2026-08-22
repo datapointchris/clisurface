@@ -262,8 +262,13 @@ func TestACommandRowIsNotACommandHeading(t *testing.T) {
 	if !listsCommands("Usage: demo\n\nCommands:\n  go   Go\n") {
 		t.Error("a bare \"Commands:\" heading was not read as one")
 	}
-	if listsCommands("Usage: demo\n\n  Indented Commands:\n") {
-		t.Error("an indented heading was read as one")
+	// sesh centers "COMMANDS" inside a styled box and is still cobra, so the
+	// gate cannot require column zero the way isCommandHeading does.
+	if !listsCommands("Usage: demo\n\n  COMMANDS  \n    list   List them\n") {
+		t.Error("an indented heading was rejected; sesh reads flat without it")
+	}
+	if listsCommands("Usage: demo\n\n  metadata  Metadata related commands:\n") {
+		t.Error("a row with a description gutter was read as a heading")
 	}
 }
 
