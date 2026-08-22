@@ -75,8 +75,9 @@ func TestCobraLeafCarriesItsFlags(t *testing.T) {
 }
 
 // __complete answers with a leaf's ValidArgs when it has no subcommands, and
-// says nothing about which kind of name it returned. `forge dies list` offered
-// its three categories and they parsed as three subcommands.
+// says nothing about which kind of name it returned. A command accepting one of
+// three fixed keywords offers those three, and they parse as three subcommands
+// unless the help screen is consulted about which names are really commands.
 func TestArgumentCompletionsAreNotSubcommands(t *testing.T) {
 	run := fakeRunner(map[string]string{
 		"__complete ":      "list\tList them\n:4\nCompletion ended with directive: x",

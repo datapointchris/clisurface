@@ -25,9 +25,9 @@ Two sources, in order of trust:
 - **The framework's own completion callback**, where one exists. Cobra answers
   `__complete` with an exact command list. This is machine-readable and is never
   guessed at.
-- **The rendered `--help` screen**, otherwise. Typer and Click draw box panels,
-  clap and pytermstyle write an indented section under a heading. Each shape has
-  a reader.
+- **The rendered `--help` screen**, otherwise. Typer and Click draw box panels;
+  a hand-rolled renderer writes indented rows under an underlined heading. Each
+  shape has a reader.
 
 Where both are available they are intersected, because a completion callback
 answers with argument values as readily as with subcommand names, and only a

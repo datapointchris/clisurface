@@ -17,7 +17,7 @@ type Framework string
 const (
 	FrameworkCobra   Framework = "cobra"
 	FrameworkRich    Framework = "rich"    // typer/click, box-drawn panels
-	FrameworkSection Framework = "section" // pytermstyle, an underlined "Commands" heading
+	FrameworkSection Framework = "section" // hand-rolled help, an underlined "Commands" heading
 	FrameworkFlat    Framework = "flat"    // no discoverable subcommands
 )
 
@@ -202,8 +202,9 @@ func build(binary string, path []string, short string, fw Framework, opts Option
 		n.Usage = strings.TrimSpace(m[1])
 	}
 	// A tool with no per-command help answers `tool sub --help` with the root
-	// screen. Reading that as sub's own children makes every command list its
-	// siblings, at every level, forever — safekeep does exactly this.
+	// screen, which hand-rolled help renderers routinely do. Reading that as
+	// sub's own children makes every command list its siblings, at every level,
+	// until the depth bound stops it.
 	if depth >= opts.maxDepth() || (parentHelp != "" && help == parentHelp) {
 		return n
 	}
@@ -221,10 +222,10 @@ func build(binary string, path []string, short string, fw Framework, opts Option
 	switch fw {
 	case FrameworkCobra:
 		// __complete is exact about names but does not say what kind of name it
-		// is returning: for a leaf with ValidArgs it answers with the argument
-		// values, so `forge dies list` offered checks/maintenance/onetime and
-		// they parsed as three subcommands. Only names the help also presents
-		// as commands survive.
+		// is returning: for a leaf carrying ValidArgs it answers with the
+		// argument values, so a command accepting one of three fixed keywords
+		// offers those three and they parse as three subcommands. Only names
+		// the help screen also presents as commands survive.
 		kids = keepListed(cobraChildren(binary, path, run), helpCommandNames(help))
 	case FrameworkRich:
 		kids = richChildren(help)
@@ -244,10 +245,11 @@ type child struct{ name, desc string }
 
 // helpCommandNames is the first word of every indented row in a help screen.
 //
-// Deliberately not keyed off an "Available Commands:" heading: ifiles overrides
-// cobra's template with its own group titles, and the heading would have to be
-// enumerated per tool. Flag rows start with a dash and drop out; example rows
-// start with the binary name and fail the intersection.
+// Deliberately not keyed off an "Available Commands:" heading. A cobra tool may
+// replace the default help template with one that groups commands under its own
+// titles, so the heading would have to be enumerated per tool. Flag rows start
+// with a dash and drop out; example rows start with the binary name and fail the
+// intersection.
 func helpCommandNames(help string) map[string]bool {
 	names := map[string]bool{}
 	for _, line := range strings.Split(help, "\n") {
@@ -327,9 +329,10 @@ func richChildren(help string) []child {
 }
 
 // sectionTree assembles the whole tree from the root screen's rows. A row may
-// name more than one word — font lists `sync setup`, `sync status`, `sync push`
-// — so the leading command words become a path and the shared prefix becomes a
-// parent node that the help never lists on its own.
+// name more than one word, as when a screen lists `sync setup`, `sync status`
+// and `sync push` rather than a `sync` parent — so the leading command words
+// become a path and the shared prefix becomes a parent node that the help never
+// lists on its own.
 func sectionTree(binary, help string) []*Node {
 	var roots []*Node
 	byName := map[string]*Node{}
@@ -348,10 +351,10 @@ func sectionTree(binary, help string) []*Node {
 				*parent = append(*parent, node)
 			}
 			if i == len(words)-1 {
-				// First row wins. font lists `install` and `install --check`
-				// as separate rows; both reduce to the same command, and the
-				// second would otherwise overwrite the real description with
-				// the flag's.
+				// First row wins. A screen may list `install` and
+				// `install --check` as separate rows; both reduce to the same
+				// command, and the second would otherwise overwrite the real
+				// description with the flag's.
 				if node.Short == "" {
 					node.Short = c.desc
 				}
@@ -367,9 +370,10 @@ func sectionTree(binary, help string) []*Node {
 	return roots
 }
 
-// sectionChildren reads the pytermstyle shape: a "Commands" heading, an
-// underline rule, then indented rows. safekeep prefixes each row with the tool
-// name where theme and font do not, so the binary name is stripped when present.
+// sectionChildren reads the hand-rolled shape: a "Commands" heading, an
+// underline rule, then indented rows. Some such screens prefix each row with
+// the tool's own name and some do not, so the binary name is stripped when
+// present.
 func sectionChildren(binary, help string) []child {
 	var kids []child
 	inSection := false
