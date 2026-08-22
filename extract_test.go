@@ -866,3 +866,25 @@ func TestARowEndingInCommandsIsStillNotAHeading(t *testing.T) {
 		}
 	}
 }
+
+// oclif namespaces with a colon instead of nesting. `netlify agents:create` is
+// a command and `netlify agents` is its whole parent, so reading the row as a
+// child builds `netlify agents agents:create`, which does not run. Handing over
+// a command that does not run is worse than stopping a level higher.
+func TestAColonNamespacedCommandIsNotNestedUnderItsTopic(t *testing.T) {
+	root := "COMMANDS\n  $ agents   Manage agent tasks\n  $ api      Run an API method\n"
+	agents := "COMMANDS\n  $ agents:create  Create a task\n  $ agents:list    List tasks\n"
+	run := fakeRunner(map[string]string{
+		"--help":        root,
+		"agents --help": agents,
+		"api --help":    "USAGE\n  $ demo api\n",
+	})
+
+	tool := extract(t, run)
+	var paths []string
+	tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
+
+	if strings.Join(paths, ",") != "agents,api" {
+		t.Errorf("paths = %v, want agents,api — a colon command was nested under its topic", paths)
+	}
+}

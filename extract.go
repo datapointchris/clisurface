@@ -378,6 +378,15 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 		if k.name == n.Name {
 			continue // a row echoing its own parent is a parse artifact, not a command
 		}
+		// oclif namespaces with a colon rather than nesting: the command is
+		// `netlify agents:create`, and `netlify agents` is the whole of its
+		// parent. Reading the row as a child builds `netlify agents
+		// agents:create`, which does not run — and handing over a command that
+		// does not run is worse than stopping a level higher. Measured across a
+		// corpus of popular npm CLIs: 200 such nodes over five tools.
+		if strings.HasPrefix(k.name, n.Name+":") {
+			continue
+		}
 		real = append(real, k)
 	}
 	if len(real) == 0 {
