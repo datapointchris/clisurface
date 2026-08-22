@@ -1,8 +1,7 @@
 # clisurface — Claude Code instructions
 
 A Go library, not a CLI. No `main` package, nothing to install; it ships as git
-tags and is consumed by `forge`, `helpnav`, and anything else that needs a
-CLI's command tree as data.
+tags and is consumed by anything that needs a CLI's command tree as data.
 
 Read `.planning/design.md` before writing any code here. The boundary between
 this library and its consumers is the decision this repo exists to hold.
@@ -15,16 +14,16 @@ this library and its consumers is the decision this repo exists to hold.
   detecting it by running it would fire real reads against production APIs and
   databases. This is the invariant the whole library is trusted on.
 
-- **No fleet knowledge reaches this package.** It never reads `repos.json`,
-  never resolves a repo to a binary, and holds no opinion about whether a verb
-  was well chosen. Those are questions about *the fleet's* CLIs; this answers
-  questions about *a* CLI. A consumer passes in a binary name and gets a tree.
-  The test is whether the package would still make sense in a repo that has
-  never heard of this fleet.
+- **No consumer's own knowledge reaches this package.** It never reads a repo
+  registry, never resolves a repo to a binary, and holds no opinion about
+  whether a verb was well chosen. Those are questions about *one portfolio's*
+  CLIs; this answers questions about *a* CLI. A consumer passes in a binary
+  name and gets a tree back. The test is whether the package would still make
+  sense to a reader who has never seen the tools that consume it.
 
 - **The core takes no third-party dependencies; anything that needs one gets its
-  own package.** `repo-structure.md` binds containment rather than a blanket
-  ban, so a consumer importing the core inherits nothing.
+  own package.** What binds is containment rather than a blanket ban, so a
+  consumer importing the core inherits nothing.
 
   Nothing has needed the split yet. A `clisurface/pty` package was planned, for
   reading a tool's help the way a person sees it, and the measurement killed it:
@@ -37,16 +36,18 @@ this library and its consumers is the decision this repo exists to hold.
   subcommands. That is how `gh` returned zero commands for months. A reader
   without a fixture pinning its shape is a reader nothing will notice breaking.
 
-- **The `go.mod` floor matches the fleet, not the lowest version the code
-  needs.** Generated CI reads the floor from `go.mod`, pins `GOTOOLCHAIN=local`,
-  then installs golangci-lint, which carries its own minimum — so a lower floor
-  fails Lint on a repo whose code is fine. `versions.json` declares it for
-  libraries and tools alike. See `standards/go.md` § "Go version floor".
+- **The `go.mod` floor matches the house declaration, not the lowest version
+  the code needs.** Generated CI reads the floor from `go.mod`, pins
+  `GOTOOLCHAIN=local`, then installs golangci-lint, which carries its own
+  minimum — so a floor below that fails Lint on a repo whose code is fine. A
+  library would otherwise floor lower than a tool; here they match, and that is
+  the reason.
 
 ## Rules that live elsewhere
 
-`standards/go.md` for layout, gofumpt, golangci-lint v2, doc comments and the
-module rules. `standards/testing.md` for what to test and at which layer.
+Layout, gofumpt, golangci-lint v2, doc comments, the module rules, and what to
+test at which layer are house-wide standards rather than this repo's, and are
+not restated here.
 
 ## Sanctioned exceptions
 
@@ -65,5 +66,5 @@ some other way and never quote it.
 
 The module path carries no `/vN` suffix, so once a major exists every consumer
 resolving `@latest` silently keeps the highest v1 instead. Deliberate majors use
-`chore(release-major)`. Full reasoning and the reset procedure: `standards/release.md`
-§ "Never write the breaking-change trailer in a Go repo's commit message".
+`chore(release-major)`. The full reasoning and the reset procedure live in the
+house release standard.

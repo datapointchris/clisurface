@@ -20,8 +20,9 @@ import (
 // becomes this package's business.
 //
 // Version is a plain incrementing integer rather than a hash or a timestamp,
-// because it is what gets typed: `forge cli diff 3 4`. Taken carries the
-// timestamp the version number deliberately does not.
+// because it is what a person types when asking for the difference between two
+// readings. Taken carries the timestamp the version number deliberately does
+// not.
 type Snapshot struct {
 	Version int       `json:"version"`
 	Taken   time.Time `json:"taken"`
