@@ -1,8 +1,11 @@
 package clisurface
 
 import (
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeRunner answers from a map keyed by the joined arguments, so the parsers
@@ -201,6 +204,84 @@ func TestFlatToolHasNoChildren(t *testing.T) {
 	tool.Walk(func(*Node) { n++ })
 	if n != 0 {
 		t.Errorf("walked %d nodes, want 0", n)
+	}
+}
+
+// wideCobra builds a root with n leaf children, so a concurrency bound has
+// something to be exceeded on.
+func wideCobra(n int) map[string]string {
+	responses := map[string]string{}
+	var rows, complete strings.Builder
+	for i := range n {
+		name := fmt.Sprintf("cmd%02d", i)
+		fmt.Fprintf(&rows, "  %s   Command %d\n", name, i)
+		fmt.Fprintf(&complete, "%s\tCommand %d\n", name, i)
+		responses[name+" --help"] = "Usage:\n  demo " + name + " [flags]\n"
+		responses["__complete "+name+" "] = ":4\nCompletion ended with directive: x"
+	}
+	responses["--help"] = "Usage:\n  demo [command]\n\nAvailable Commands:\n" + rows.String()
+	responses["__complete "] = complete.String() + ":4\nCompletion ended with directive: x"
+	return responses
+}
+
+func TestConcurrencyIsBounded(t *testing.T) {
+	for _, limit := range []int{1, 4} {
+		t.Run(fmt.Sprintf("limit %d", limit), func(t *testing.T) {
+			responses := wideCobra(24)
+			var inFlight, peak atomic.Int64
+
+			run := func(_ string, args ...string) string {
+				n := inFlight.Add(1)
+				defer inFlight.Add(-1)
+				for {
+					p := peak.Load()
+					if n <= p || peak.CompareAndSwap(p, n) {
+						break
+					}
+				}
+				// Widen the window so genuine overlap is observable rather than
+				// depending on the scheduler happening to interleave.
+				time.Sleep(time.Millisecond)
+				return responses[strings.Join(args, " ")]
+			}
+
+			if _, err := Extract("demo", Options{Runner: run, Concurrency: limit}); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+			if got := peak.Load(); got > int64(limit) {
+				t.Errorf("peak in-flight = %d, want at most %d", got, limit)
+			}
+			// Without this the bound would pass trivially on a serial walk.
+			if limit > 1 && peak.Load() < 2 {
+				t.Errorf("peak in-flight = %d; nothing ran concurrently", peak.Load())
+			}
+		})
+	}
+}
+
+// Children are written from separate goroutines into a pre-sized slice, so the
+// order they end up in must not depend on which finished first.
+func TestChildOrderSurvivesConcurrency(t *testing.T) {
+	responses := wideCobra(16)
+	var want string
+	for run := range 20 {
+		tool, err := Extract("demo", Options{Runner: fakeRunner(responses)})
+		if err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+		var paths []string
+		tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
+		got := strings.Join(paths, ",")
+		if run == 0 {
+			want = got
+			if !strings.HasPrefix(got, "cmd00,cmd01,cmd02") {
+				t.Fatalf("order = %q, want the help screen's order", got)
+			}
+			continue
+		}
+		if got != want {
+			t.Fatalf("run %d order = %q, want %q", run, got, want)
+		}
 	}
 }
 

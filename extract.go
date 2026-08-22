@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -58,6 +60,15 @@ type Options struct {
 	// MaxDepth bounds how many words deep the walk goes. Zero selects
 	// [DefaultMaxDepth].
 	MaxDepth int
+
+	// Concurrency bounds how many child commands are read at once. Zero selects
+	// [runtime.NumCPU]; one reads serially, which is what a test wanting
+	// deterministic ordering of side effects should ask for.
+	//
+	// This bounds processes, not goroutines. Reading a tool is spent almost
+	// entirely waiting on the tool's own startup, so the limit that matters is
+	// how many of those exist at once.
+	Concurrency int
 }
 
 // maxDepth resolves the bound, so the zero value of Options stays meaningful.
@@ -74,6 +85,30 @@ func (o Options) runner() Runner {
 		return o.Runner
 	}
 	return execRunner
+}
+
+// concurrency resolves the process limit, so the zero value of Options stays
+// meaningful.
+func (o Options) concurrency() int {
+	if o.Concurrency > 0 {
+		return o.Concurrency
+	}
+	return runtime.NumCPU()
+}
+
+// limited wraps a Runner so that at most n of them are in flight.
+//
+// The limit is deliberately here rather than around the recursion. A parent
+// waiting on its children holds no slot, so it cannot block the children it is
+// waiting for — bounding the recursion instead would deadlock as soon as every
+// slot was held by a parent.
+func limited(run Runner, n int) Runner {
+	sem := make(chan struct{}, n)
+	return func(binary string, args ...string) string {
+		sem <- struct{}{}
+		defer func() { <-sem }()
+		return run(binary, args...)
+	}
 }
 
 // Node is one command in a tool's tree.
@@ -160,13 +195,13 @@ func execRunner(binary string, args ...string) string {
 // signal that anything was missing, and confidently describe a tool that does
 // not exist.
 func Extract(binary string, opts Options) (*Tool, error) {
-	run := opts.runner()
+	run := limited(opts.runner(), opts.concurrency())
 	rootHelp := run(binary, "--help")
 	if strings.TrimSpace(rootHelp) == "" {
 		return nil, fmt.Errorf("clisurface: %q printed no help; is it on PATH?", binary)
 	}
 	t := &Tool{Binary: binary, Framework: detectFramework(binary, rootHelp, run)}
-	t.Root = build(binary, nil, "", t.Framework, opts, 0, "")
+	t.Root = build(binary, nil, "", t.Framework, opts, run, 0, "")
 	return t, nil
 }
 
@@ -190,8 +225,7 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	return FrameworkFlat
 }
 
-func build(binary string, path []string, short string, fw Framework, opts Options, depth int, parentHelp string) *Node {
-	run := opts.runner()
+func build(binary string, path []string, short string, fw Framework, opts Options, run Runner, depth int, parentHelp string) *Node {
 	args := append(append([]string{}, path...), "--help")
 	help := run(binary, args...)
 
@@ -240,12 +274,32 @@ func build(binary string, path []string, short string, fw Framework, opts Option
 	case FrameworkSection, FrameworkFlat:
 		kids = nil
 	}
+	var real []child
 	for _, k := range kids {
 		if k.name == n.Name {
 			continue // a row echoing its own parent is a parse artifact, not a command
 		}
-		n.Children = append(n.Children, build(binary, append(append([]string{}, path...), k.name), k.desc, fw, opts, depth+1, help))
+		real = append(real, k)
 	}
+	if len(real) == 0 {
+		return n
+	}
+
+	// Siblings are read concurrently because the cost of a read is the tool's
+	// own startup, not this walk. Each goroutine writes one distinct element of
+	// a pre-sized slice, which needs no lock and keeps the children in the order
+	// the help screen listed them; Wait is what publishes those writes.
+	n.Children = make([]*Node, len(real))
+	var wg sync.WaitGroup
+	for i, k := range real {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			childPath := append(append([]string{}, path...), k.name)
+			n.Children[i] = build(binary, childPath, k.desc, fw, opts, run, depth+1, help)
+		}()
+	}
+	wg.Wait()
 	return n
 }
 
