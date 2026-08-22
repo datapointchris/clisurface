@@ -256,13 +256,24 @@ func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
 // not exist.
 func Extract(binary string, opts Options) (*Tool, error) {
 	run := limited(opts.runner(), opts.concurrency())
-	rootHelp := stripANSI(run(binary, "--help"))
+	rootRaw := run(binary, "--help")
+	rootHelp := stripANSI(rootRaw)
 	if strings.TrimSpace(rootHelp) == "" {
 		return nil, fmt.Errorf("clisurface: %q printed no help; is it on PATH?", binary)
 	}
-	t := &Tool{Binary: binary, Framework: detectFramework(binary, rootHelp, run)}
-	t.Root = build(binary, nil, "", t.Framework, opts, run, 0, "")
+	w := walk{binary: binary, fw: detectFramework(binary, rootHelp, run), opts: opts, run: run}
+	t := &Tool{Binary: binary, Framework: w.fw}
+	t.Root = build(w, nil, "", 0, "", rootRaw)
 	return t, nil
+}
+
+// walk carries what does not change between levels, so build takes one of these
+// rather than repeating four arguments down every recursive call.
+type walk struct {
+	binary string
+	fw     Framework
+	opts   Options
+	run    Runner
 }
 
 // detectFramework takes the root help rather than fetching it, because Extract
@@ -285,19 +296,26 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	return FrameworkFlat
 }
 
-func build(binary string, path []string, short string, fw Framework, opts Options, run Runner, depth int, parentHelp string) *Node {
-	args := append(append([]string{}, path...), "--help")
-	raw := run(binary, args...)
+// build reads one node and everything below it. prefetched is the help screen
+// the caller already paid for, empty at every level but the root: Extract runs
+// the root --help to detect the framework, and running it a second time here
+// doubled the cost of every tool and doubled any side effect it has.
+func build(w walk, path []string, short string, depth int, parentHelp, prefetched string) *Node {
+	raw := prefetched
+	if raw == "" {
+		args := append(append([]string{}, path...), "--help")
+		raw = w.run(w.binary, args...)
+	}
 	help := stripANSI(raw)
 
 	n := &Node{Path: append([]string{}, path...), Short: short, Flags: uniqueFlags(help)}
-	if opts.WithBody {
+	if w.opts.WithBody {
 		n.Body = raw
 	}
 	if len(path) > 0 {
 		n.Name = path[len(path)-1]
 	} else {
-		n.Name = binary
+		n.Name = w.binary
 	}
 	if m := usageRe.FindStringSubmatch(help); m != nil {
 		n.Usage = strings.TrimSpace(m[1])
@@ -306,28 +324,28 @@ func build(binary string, path []string, short string, fw Framework, opts Option
 	// screen, which hand-rolled help renderers routinely do. Reading that as
 	// sub's own children makes every command list its siblings, at every level,
 	// until the depth bound stops it.
-	if depth >= opts.maxDepth() || (parentHelp != "" && help == parentHelp) {
+	if depth >= w.opts.maxDepth() || (parentHelp != "" && help == parentHelp) {
 		return n
 	}
 
 	// The section format prints its whole tree on the root screen and has no
 	// per-command help, so it is assembled in one pass instead of walked.
-	if fw == FrameworkSection {
+	if w.fw == FrameworkSection {
 		if len(path) == 0 {
-			n.Children = sectionTree(binary, help)
+			n.Children = sectionTree(w.binary, help)
 		}
 		return n
 	}
 
 	var kids []child
-	switch fw {
+	switch w.fw {
 	case FrameworkCobra:
 		// __complete is exact about names but does not say what kind of name it
 		// is returning: for a leaf carrying ValidArgs it answers with the
 		// argument values, so a command accepting one of three fixed keywords
 		// offers those three and they parse as three subcommands. Only names
 		// the help screen also presents as commands survive.
-		kids = keepListed(cobraChildren(binary, path, run), helpCommandNames(help))
+		kids = keepListed(cobraChildren(w.binary, path, w.run), helpCommandNames(help))
 	case FrameworkRich:
 		kids = richChildren(help)
 	case FrameworkHeading:
@@ -357,7 +375,7 @@ func build(binary string, path []string, short string, fw Framework, opts Option
 		go func() {
 			defer wg.Done()
 			childPath := append(append([]string{}, path...), k.name)
-			n.Children[i] = build(binary, childPath, k.desc, fw, opts, run, depth+1, help)
+			n.Children[i] = build(w, childPath, k.desc, depth+1, help, "")
 		}()
 	}
 	wg.Wait()

@@ -3,6 +3,7 @@ package clisurface
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -269,6 +270,39 @@ func TestACommandRowIsNotACommandHeading(t *testing.T) {
 	}
 	if listsCommands("Usage: demo\n\n  metadata  Metadata related commands:\n") {
 		t.Error("a row with a description gutter was read as a heading")
+	}
+}
+
+// Extract runs the root --help to detect the framework, and the walk must not
+// run it again. A second read doubles the cost of every tool and doubles any
+// side effect it has: claude-desktop ignores --help and launches Electron, so
+// it was launched twice and took 40s to abandon instead of 20s.
+func TestTheRootHelpIsReadOnce(t *testing.T) {
+	responses := map[string]string{
+		"--help":      "Usage:\n  demo [command]\n\nAvailable Commands:\n  list   List them\n",
+		"list --help": "Usage:\n  demo list [flags]\n",
+	}
+	var mu sync.Mutex
+	calls := map[string]int{}
+	run := func(_ string, args ...string) string {
+		key := strings.Join(args, " ")
+		mu.Lock()
+		calls[key]++
+		mu.Unlock()
+		return responses[key]
+	}
+
+	if _, err := Extract("demo", Options{Runner: run}); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if calls["--help"] != 1 {
+		t.Errorf("ran the root --help %d times, want 1", calls["--help"])
+	}
+	if calls["list --help"] != 1 {
+		t.Errorf("ran `list --help` %d times, want 1", calls["list --help"])
 	}
 }
 
