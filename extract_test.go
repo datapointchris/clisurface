@@ -204,6 +204,89 @@ func TestFlatToolHasNoChildren(t *testing.T) {
 	}
 }
 
+// clapHostile carries every variation measured across uv, cargo, rustup and
+// ruff: a four-space indent, aliases after the name, the block sitting below
+// Options: rather than first, a wrapped description continuation, a generated
+// `help` row, and a further block after it.
+const clapHostile = `A test tool.
+
+Usage: demo [OPTIONS] [COMMAND]
+
+Options:
+  -V, --version    Print version info and exit
+
+Commands:
+    build, b    Compile the current package
+    check, c    Analyze the current package and report errors, but don't build
+                object files
+    tool        Run and install commands
+    help        Print this message or the help of the given subcommand(s)
+
+Cache options:
+  -n, --no-cache    Avoid the cache
+`
+
+// clapNested indents by two where the root indents by four, which is the
+// disagreement between uv and cargo inside one tree.
+const clapNested = `Run and install commands
+
+Usage: demo tool [OPTIONS] <COMMAND>
+
+Commands:
+  run     Run a command provided by a package
+  list    List installed tools
+
+Global options:
+  -q, --quiet  Silence
+`
+
+func TestClapReadsBothIndentsAliasesAndNesting(t *testing.T) {
+	run := fakeRunner(map[string]string{
+		"--help":           clapHostile,
+		"build --help":     "Compile the current package\n\nUsage: demo build [OPTIONS]\n\nOptions:\n      --release  Build optimized\n",
+		"check --help":     "Analyze the current package\n\nUsage: demo check [OPTIONS]\n",
+		"tool --help":      clapNested,
+		"tool run --help":  "Run a command\n\nUsage: demo tool run <NAME>\n",
+		"tool list --help": "List installed tools\n\nUsage: demo tool list\n",
+	})
+
+	tool := extract(t, run)
+	if tool.Framework != FrameworkClap {
+		t.Fatalf("framework = %q, want clap", tool.Framework)
+	}
+
+	var paths []string
+	tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
+	want := []string{"build", "check", "tool", "tool run", "tool list"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("paths = %v, want %v", paths, want)
+	}
+
+	// `build, b` names one command, not two, and the alias is not one of them.
+	if contains(paths, "b") || contains(paths, "c") {
+		t.Errorf("an alias was read as a command: %v", paths)
+	}
+	// The wrapped second line of check's description is indented like a row.
+	if contains(paths, "object") || contains(paths, "object files") {
+		t.Errorf("a wrapped description line was read as a command: %v", paths)
+	}
+}
+
+func TestClapDescriptionsSurviveTheAlias(t *testing.T) {
+	run := fakeRunner(map[string]string{
+		"--help":       clapHostile,
+		"build --help": "Usage: demo build\n",
+		"check --help": "Usage: demo check\n",
+		"tool --help":  "Usage: demo tool\n",
+	})
+	tool := extract(t, run)
+	got := map[string]string{}
+	tool.Walk(func(n *Node) { got[n.Name] = n.Short })
+	if got["build"] != "Compile the current package" {
+		t.Errorf("build short = %q, want the description after the alias", got["build"])
+	}
+}
+
 // A name that is not on PATH prints nothing. Reading that as a tool with no
 // subcommands is the failure worth refusing: the result is well formed, exits
 // zero, and confidently describes something that does not exist.

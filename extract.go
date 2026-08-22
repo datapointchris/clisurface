@@ -18,6 +18,7 @@ const (
 	FrameworkCobra   Framework = "cobra"
 	FrameworkRich    Framework = "rich"    // typer/click, box-drawn panels
 	FrameworkSection Framework = "section" // hand-rolled help, an underlined "Commands" heading
+	FrameworkClap    Framework = "clap"    // rust/clap, a "Commands:" heading
 	FrameworkFlat    Framework = "flat"    // no discoverable subcommands
 )
 
@@ -181,6 +182,11 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	if len(sectionChildren(binary, rootHelp)) > 0 {
 		return FrameworkSection
 	}
+	// After section, because that format writes a bare "Commands" heading with
+	// an underline rule where clap writes "Commands:" with none.
+	if len(clapChildren(rootHelp)) > 0 {
+		return FrameworkClap
+	}
 	return FrameworkFlat
 }
 
@@ -229,6 +235,8 @@ func build(binary string, path []string, short string, fw Framework, opts Option
 		kids = keepListed(cobraChildren(binary, path, run), helpCommandNames(help))
 	case FrameworkRich:
 		kids = richChildren(help)
+	case FrameworkClap:
+		kids = clapChildren(help)
 	case FrameworkSection, FrameworkFlat:
 		kids = nil
 	}
@@ -324,6 +332,54 @@ func richChildren(help string) []child {
 		if m := panelRowRe.FindStringSubmatch(line); len(m) == 3 && !skip[m[1]] {
 			kids = append(kids, child{m[1], strings.TrimSpace(m[2])})
 		}
+	}
+	return kids
+}
+
+// clapChildren reads the clap shape: a "Commands:" heading, then indented rows
+// until an unindented line ends the block.
+//
+// Unlike the section format this is walked rather than assembled in one pass,
+// because clap gives every group its own help screen carrying its own
+// "Commands:".
+//
+// Three things are deliberately not pinned, because clap's own tools disagree
+// about all of them. The indent is two spaces in some and four in others. The
+// block is not always first — it can sit below "Options:". And a row may carry
+// aliases after the name, as `build, b`, of which only the first is a command.
+func clapChildren(help string) []child {
+	var kids []child
+	inSection := false
+	for _, line := range strings.Split(help, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "Commands:" || trimmed == "SUBCOMMANDS:" {
+			inSection = true
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") {
+			inSection = false // an unindented heading ends the block
+			continue
+		}
+		// The two-space gutter is required rather than optional: it is what
+		// separates a command row from the wrapped continuation of a long
+		// description, which is indented and would otherwise read as a command
+		// named after its own last word.
+		name, desc, found := strings.Cut(trimmed, "  ")
+		if !found {
+			continue
+		}
+		name, _, _ = strings.Cut(name, ",")
+		name = strings.TrimSpace(name)
+		if !isCommandName(name) || skip[name] {
+			continue
+		}
+		kids = append(kids, child{name, strings.TrimSpace(desc)})
 	}
 	return kids
 }
