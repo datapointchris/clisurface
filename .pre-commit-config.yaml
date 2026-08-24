@@ -1,4 +1,4 @@
-# forge-toolchain: 16
+# forge-toolchain: 18
 fail_fast: true
 default_stages: [pre-commit]
 repos:
@@ -180,7 +180,7 @@ repos:
   # No --strict: one advisory warning across the whole fleet, and a warning is
   # about fragility rather than breakage.
   - repo: https://github.com/datapointchris/refcheck
-    rev: v0.5.2
+    rev: v0.6.0
     hooks:
       - id: refcheck
         args: [--moves]
