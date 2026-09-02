@@ -61,7 +61,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           allow-initial-development-versions: true
-          changelog-file: CHANGELOG.md
+          # No changelog-file: the release body is the changelog, and nothing here
+          # tracks one.
 
       # pkg.go.dev only indexes a version once the proxy has fetched it.
       - name: Prime the module proxy
