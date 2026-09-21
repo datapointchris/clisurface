@@ -15,6 +15,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Without this, release publishes whatever is on main, linted or not.
+  validate:
+    uses: ./.github/workflows/validate.yml
+
   # A library ships as a git tag, so the only thing that must hold is that the
   # tagged commit is green. Publishing a broken tag is unfixable: the module
   # proxy serves any tagged version on demand, caches it permanently, and it
@@ -26,7 +30,7 @@ jobs:
   # The matrix is the platforms the consumers run on. Every reader here is
   # string processing over an injected runner, so the tests exercise no
   # platform-specific path and a third OS would prove nothing.
-  validate:
+  cross-platform:
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +52,7 @@ jobs:
   # A major here is an outage rather than a version, because the module path
   # carries no /vN suffix — see CLAUDE.md.
   release:
-    needs: validate
+    needs: [validate, cross-platform]
     uses: datapointchris/reusable-workflows/.github/workflows/go-semantic-release.yml@v1
     permissions:
       contents: write
