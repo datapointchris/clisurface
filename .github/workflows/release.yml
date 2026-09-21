@@ -7,9 +7,9 @@ on:
 permissions:
   contents: read
 
-# Two pushes to main inside one run's window would otherwise race, and the later
-# run fails pushing its version bump onto a ref that has already moved.
-# Never cancel-in-progress: a canceled release can leave a tag with no release.
+# Two pushes to main inside one run's window would otherwise race to cut the
+# same version. Never cancel-in-progress: a canceled release can leave a tag
+# with no release.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -45,38 +45,18 @@ jobs:
 
       - run: go test -race ./...
 
+  # A major here is an outage rather than a version, because the module path
+  # carries no /vN suffix — see CLAUDE.md.
   release:
     needs: validate
-    runs-on: ubuntu-latest
+    uses: datapointchris/reusable-workflows/.github/workflows/go-semantic-release.yml@v1
     permissions:
       contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      # allow-initial-development-versions is what keeps this on 0.x. Without it
-      # go-semantic-release forces a major bump on any change while the major is
-      # 0, so the next `fix:` would ship 1.0.0. For a library 1.0 is a
-      # compatibility promise to every consumer, so it stays a deliberate act:
-      # drop this input when the API is settled.
-      #
-      # A major here is an outage rather than a version, because the module path
-      # carries no /vN suffix — see CLAUDE.md.
-      - uses: go-semantic-release/action@v1
-        id: semrel
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          allow-initial-development-versions: true
-          # No changelog-file: the release body is the changelog, and nothing here
-          # tracks one.
-
+    with:
+      # Keeps this on 0.x. Without it go-semantic-release forces a major bump on
+      # any change while the major is 0, so the next `fix:` would ship 1.0.0.
+      # For a library 1.0 is a compatibility promise to every consumer, so it
+      # stays a deliberate act: drop this input when the API is settled.
+      allow-initial-development-versions: true
       # pkg.go.dev only indexes a version once the proxy has fetched it.
-      - name: Prime the module proxy
-        if: steps.semrel.outputs.version != ''
-        env:
-          VERSION: ${{ steps.semrel.outputs.version }}
-        run: |
-          module="$(go list -m)"
-          curl -fsS "https://proxy.golang.org/${module}/@v/v${VERSION}.info" || \
-            echo "proxy has not picked up v${VERSION} yet; it will on first fetch"
+      prime-module-proxy: true
