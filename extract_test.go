@@ -173,6 +173,35 @@ func TestSectionRowsKeepArgsOutAndNestMultiWord(t *testing.T) {
 	}
 }
 
+// A row ending its command words in a verb placeholder lists its verbs on its
+// own screen, which is the one read a section-format tree earns. A leaf the
+// root screen shows as complete is never handed --help, because a hand-rolled
+// command may take it as an argument.
+func TestASectionRowDeferringItsVerbsIsReadFromItsOwnScreen(t *testing.T) {
+	root := "\nCommands\n───────\n" +
+		"  demo backup run [--label <note>]  Copy the paths\n" +
+		"  demo apply <theme>                Apply a theme\n" +
+		"  demo config <verb>                Inspect and create config files\n"
+	config := "\nUsage: demo config <verb>\n\nCommands\n───────\n" +
+		"  demo config show         Display the resolved config\n" +
+		"  demo config init [name]  Write a starter config\n"
+
+	var seen []string
+	tool := extract(t, recordingRunner(map[string]string{"--help": root, "config --help": config}, &seen))
+
+	var paths []string
+	tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
+	want := []string{"backup", "backup run", "apply", "config", "config show", "config init"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("paths = %v, want %v", paths, want)
+	}
+	for _, args := range seen {
+		if strings.HasSuffix(args, "--help") && args != "--help" && args != "config --help" {
+			t.Errorf("ran %q; only a row deferring its verbs earns a read", args)
+		}
+	}
+}
+
 // A tool with no per-command help answers `tool sub --help` with the root
 // screen, which made every command list its siblings at every level.
 func TestIdenticalChildHelpStopsTheWalk(t *testing.T) {

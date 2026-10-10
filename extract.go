@@ -177,6 +177,10 @@ type Node struct {
 	// childIndex is scratch used while assembling a section-format tree, where
 	// a parent is implied by its rows rather than listed on its own.
 	childIndex map[string]*Node
+
+	// verbsElsewhere is scratch from the same assembly: the row named this
+	// command with a verb placeholder, so its verbs are on its own screen.
+	verbsElsewhere bool
 }
 
 // Leaf reports whether the node runs something rather than holding verbs.
@@ -306,7 +310,7 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	if strings.Contains(rootHelp, "╭─") {
 		return FrameworkRich
 	}
-	if len(sectionChildren(binary, rootHelp)) > 0 {
+	if len(sectionRows(binary, rootHelp)) > 0 {
 		return FrameworkSection
 	}
 	// After section, because that format writes a bare "Commands" heading with
@@ -355,11 +359,12 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 		return n
 	}
 
-	// The section format prints its whole tree on the root screen and has no
-	// per-command help, so it is assembled in one pass instead of walked.
+	// The section format prints its tree on the root screen, so it is assembled
+	// in one pass instead of walked. Only a row deferring its verbs earns a read.
 	if w.fw == FrameworkSection {
 		if len(path) == 0 {
 			n.Children = sectionTree(w.binary, help)
+			readDeferredVerbs(w, n.Children, help)
 		}
 		return n
 	}
@@ -794,7 +799,7 @@ func sectionTree(binary, help string) []*Node {
 	var roots []*Node
 	byName := map[string]*Node{}
 
-	for _, c := range sectionChildren(binary, help) {
+	for _, c := range sectionRows(binary, help) {
 		words := strings.Fields(c.name)
 		parent := &roots
 		var path []string
@@ -815,6 +820,7 @@ func sectionTree(binary, help string) []*Node {
 				if node.Short == "" {
 					node.Short = c.desc
 				}
+				node.verbsElsewhere = node.verbsElsewhere || c.verbsElsewhere
 			} else {
 				if node.childIndex == nil {
 					node.childIndex = map[string]*Node{}
@@ -827,12 +833,72 @@ func sectionTree(binary, help string) []*Node {
 	return roots
 }
 
-// sectionChildren reads the hand-rolled shape: a "Commands" heading, an
-// underline rule, then indented rows. Some such screens prefix each row with
-// the tool's own name and some do not, so the binary name is stripped when
-// present.
-func sectionChildren(binary, help string) []child {
-	var kids []child
+// readDeferredVerbs gives each command whose row deferred its verbs the
+// children its own screen lists, then does the same below them.
+//
+// Nothing else under a section-format root is read. A hand-rolled command may
+// take --help as an argument rather than a request, so a leaf the root screen
+// shows as complete is never handed one.
+func readDeferredVerbs(w walk, nodes []*Node, rootHelp string) {
+	var wg sync.WaitGroup
+	for _, node := range nodes {
+		if !node.verbsElsewhere || len(node.Children) > 0 || len(node.Path) >= w.opts.maxDepth() {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			args := append(append([]string{}, node.Path...), "--help")
+			help := stripANSI(w.run(w.binary, args...))
+			if help == rootHelp {
+				return
+			}
+			if own := nodeAt(sectionTree(w.binary, help), node.Path); own != nil {
+				node.Children = own.Children
+			}
+		}()
+	}
+	wg.Wait()
+	for _, node := range nodes {
+		readDeferredVerbs(w, node.Children, rootHelp)
+	}
+}
+
+// nodeAt follows path down a tree by name, or returns nil where it leaves it.
+func nodeAt(nodes []*Node, path []string) *Node {
+	var found *Node
+	for _, name := range path {
+		found = nil
+		for _, n := range nodes {
+			if n.Name == name {
+				found = n
+				break
+			}
+		}
+		if found == nil {
+			return nil
+		}
+		nodes = found.Children
+	}
+	return found
+}
+
+// verbPlaceholders are the argument spellings that stand for a verb. A row
+// whose command words end in one names a namespace whose verbs its own screen
+// lists, though the root screen shows nothing below it.
+var verbPlaceholders = map[string]bool{"<verb>": true, "<command>": true, "<subcommand>": true}
+
+// sectionRow is one command row of a section-format screen.
+type sectionRow struct {
+	name, desc     string
+	verbsElsewhere bool
+}
+
+// sectionRows reads the hand-rolled shape: a "Commands" heading, an underline
+// rule, then indented rows. Some such screens prefix each row with the tool's
+// own name and some do not, so the binary name is stripped when present.
+func sectionRows(binary, help string) []sectionRow {
+	var kids []sectionRow
 	inSection := false
 	for _, line := range strings.Split(help, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -865,8 +931,9 @@ func sectionChildren(binary, help string) []child {
 		// Keep every leading command word and stop at the first argument
 		// placeholder, so `sync push` stays two words while
 		// `backup [--tag <name>]` stays one.
+		fields := strings.Fields(left)
 		var words []string
-		for _, w := range strings.Fields(left) {
+		for _, w := range fields {
 			if !isCommandName(w) {
 				break
 			}
@@ -875,7 +942,11 @@ func sectionChildren(binary, help string) []child {
 		if len(words) == 0 || skip[words[0]] {
 			continue
 		}
-		kids = append(kids, child{strings.Join(words, " "), strings.TrimSpace(desc)})
+		kids = append(kids, sectionRow{
+			name:           strings.Join(words, " "),
+			desc:           strings.TrimSpace(desc),
+			verbsElsewhere: len(fields) > len(words) && verbPlaceholders[strings.ToLower(fields[len(words)])],
+		})
 	}
 	return kids
 }
