@@ -3,8 +3,11 @@
 A Go library, not a CLI. No `main` package, nothing to install; it ships as git
 tags and is consumed by anything that needs a CLI's command tree as data.
 
-Read `.planning/design.md` before writing any code here. The boundary between
-this library and its consumers is the decision this repo exists to hold.
+Read the README's "What a surface is, and what it is not" before writing any
+code here. The boundary between this library and its consumers is the decision
+this repo exists to hold. A function operating on the model belongs here. One
+that knows where a consumer keeps things, or what a consumer considers good,
+does not.
 
 ## Constraints that must not regress
 
