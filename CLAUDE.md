@@ -52,9 +52,9 @@ does not.
 
 - **A recipe is frozen and a reader is not, so a tool a reader already handles
   never gets one.** Every entry in the table earns its place by being
-  unreachable otherwise, and the fleet sweep in
-  `~/tools/helpnav/.planning/sweep/` is what proves it — run it before and after
-  and diff every framework and node count.
+  unreachable otherwise, and a sweep over every CLI a machine declares is what
+  proves it — run it before and after and diff every framework and node count.
+  This repo's status notes say where the sweep lives.
 
 - **The core takes no third-party dependencies; anything that needs one gets its
   own package.** What binds is containment rather than a blanket ban, so a
