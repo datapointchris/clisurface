@@ -8,12 +8,12 @@ import (
 	"sync"
 )
 
-// FrameworkRecipe marks a tree read through a hand-written [Recipe] rather than
+// FrameworkRecipe marks a tree read through a hand-written recipe rather than
 // by recognizing a framework. The shape is that one tool's own, which is why it
 // needed a recipe.
 const FrameworkRecipe Framework = "recipe"
 
-// A Recipe is how to read one tool whose help no reader can reach.
+// A recipe is how to read one tool whose help no reader can reach.
 //
 // It names the way in and never the commands themselves. A list of commands
 // would be stale the day the tool released; an entry point outlives that, so
@@ -23,7 +23,7 @@ const FrameworkRecipe Framework = "recipe"
 // error on aws, and on git it opens a man page below the top level. So a recipe
 // supplies the invocation and the reader together — knowing how to ask is
 // useless without knowing how to read what comes back.
-type Recipe struct {
+type recipe struct {
 	// Help returns what to run for one node. The path is the command words
 	// below the binary, empty at the root. Returning an empty name means this
 	// node cannot be read and has no children.
@@ -57,7 +57,7 @@ type Recipe struct {
 // Every entry earns its place by being unreachable otherwise. A tool a reader
 // already handles must not appear here, because a recipe is frozen knowledge
 // and a reader is not.
-var recipes = map[string]Recipe{
+var recipes = map[string]recipe{
 	"aws":    awsRecipe,
 	"direnv": direnvRecipe,
 	"git":    gitRecipe,
@@ -65,19 +65,9 @@ var recipes = map[string]Recipe{
 }
 
 // recipeFor returns the recipe for a binary, if the table holds one.
-func recipeFor(binary string) (Recipe, bool) {
+func recipeFor(binary string) (recipe, bool) {
 	r, ok := recipes[binary]
 	return r, ok
-}
-
-// Recipes names every tool read by a hand-written recipe, so a consumer can say
-// which tools it treats specially rather than leaving a person to guess.
-func Recipes() []string {
-	names := make([]string, 0, len(recipes))
-	for name := range recipes {
-		names = append(names, name)
-	}
-	return names
 }
 
 // extractByRecipe walks a tool through its recipe rather than through a
@@ -87,7 +77,7 @@ func Recipes() []string {
 // on almost nothing — not how help is asked for, not which program answers, not
 // how the answer is read — so a shared function would be a switch at every step
 // with one branch never taken.
-func extractByRecipe(binary string, r Recipe, opts Options, run Runner) (*Tool, error) {
+func extractByRecipe(binary string, r recipe, opts Options, run Runner) (*Tool, error) {
 	name, args := r.Help(binary, nil)
 	if name == "" {
 		return nil, fmt.Errorf("clisurface: the recipe for %q reads nothing at its root", binary)
@@ -114,7 +104,7 @@ func extractByRecipe(binary string, r Recipe, opts Options, run Runner) (*Tool, 
 // would have read them. It carries the path it was asked for, so a caller can
 // splice it in place of the stub it replaces.
 //
-// Only tools read by a [Recipe] produce unread nodes today; for anything else
+// Only tools read by a recipe produce unread nodes; for anything else
 // this reads the subtree just the same, which is what makes it safe to call
 // without first asking how a tool was read.
 func ExtractAt(binary string, path []string, opts Options) (*Node, error) {
@@ -158,7 +148,7 @@ func findNode(n *Node, path []string) *Node {
 	return nil
 }
 
-func buildByRecipe(binary string, r Recipe, opts Options, run Runner, path []string, short string, level, maxDepth int, prefetched string) *Node {
+func buildByRecipe(binary string, r recipe, opts Options, run Runner, path []string, short string, level, maxDepth int, prefetched string) *Node {
 	raw := prefetched
 	if raw == "" {
 		name, args := r.Help(binary, path)
@@ -252,7 +242,7 @@ const awsDepth = 2
 // not read at all. There are no descriptions anywhere in a completion reply, so
 // the tree carries names only — enough to leave with the command, which is what
 // browsing is for.
-var awsRecipe = Recipe{
+var awsRecipe = recipe{
 	MaxDepth: awsDepth,
 	// A service's operations are read when someone opens that service. Reading
 	// all 438 up front takes twelve seconds; reading one takes 175ms.
@@ -312,7 +302,7 @@ var awsRecipe = Recipe{
 //
 // So this is a recipe rather than a reader. A reader would hand the walk a list
 // of commands it must not follow.
-var direnvRecipe = Recipe{
+var direnvRecipe = recipe{
 	MaxDepth: 1,
 	Help: func(binary string, path []string) (string, []string) {
 		if len(path) > 0 {
@@ -372,7 +362,7 @@ var direnvRecipe = Recipe{
 // Below the top, `git <cmd> --help` opens a man page. `git <cmd> -h` prints
 // usage and flags straight to stdout with no pager, which is the whole reason
 // git needs no `help` verb and no relaxed invariant.
-var gitRecipe = Recipe{
+var gitRecipe = recipe{
 	Help: func(binary string, path []string) (string, []string) {
 		if len(path) == 0 {
 			return binary, []string{"help", "-a"}
@@ -528,7 +518,7 @@ func gitNextWord(path, words []string) string {
 //
 // One level only: tmux has no per-command help to walk into, and
 // `list-commands` has already said everything there is.
-var tmuxRecipe = Recipe{
+var tmuxRecipe = recipe{
 	MaxDepth: 1,
 	Help: func(binary string, path []string) (string, []string) {
 		if len(path) > 0 {

@@ -123,8 +123,8 @@ recognizes produce the same tree.
 
 A recipe names an **entry point**, never a command list. A list would be stale
 the day the tool released. An entry point outlives it, so a subcommand the tool
-adds later appears without the recipe changing. `clisurface.Recipes()` names
-every tool read this way. Each is there for a reason no reader can answer:
+adds later appears without the recipe changing. Each tool with a recipe is
+there for a reason no reader can answer:
 
 - git lists its commands under prose headings, and `git <cmd> --help` opens a
   man page. It is read from `git help -a` and `git <cmd> -h`.

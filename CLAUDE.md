@@ -34,7 +34,7 @@ does not.
   a product for a stranger; the fleet is one deployment of it" applied to the
   API surface rather than to the prose.
 
-- **A `Recipe` names an entry point, never a command list.** `recipe.go` holds
+- **A recipe names an entry point, never a command list.** `recipe.go` holds
   per-tool knowledge for tools no reader can reach — aws, direnv, git and tmux —
   and that is not a violation of the rule above: git is every reader's git, not
   one portfolio's. What it must never hold is *what commands a tool has*. A list
