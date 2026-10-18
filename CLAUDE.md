@@ -11,15 +11,17 @@ does not.
 
 ## Constraints that must not regress
 
-- **A bare subcommand is never run.** Discovery may run `--help` at any depth
-  and a framework's completion callback, and nothing else. The shape most worth
-  finding is a noun that performs a read when invoked with no verb, and
-  detecting it by running it would fire real reads against production APIs and
-  databases. This is the invariant the whole library is trusted on.
+- **Nothing the walk discovers is run bare.** Discovery runs `--help` at any
+  depth, a framework's completion callback, and a recipe's hand-written entry
+  point such as `git help -a` or `tmux list-commands`, and nothing else. The
+  shape most worth finding is a noun that performs a read when invoked with no
+  verb, and detecting it by running it would fire real reads against production
+  APIs and databases. This is the invariant the whole library is trusted on.
 
 - **The completion callback is probed only after the help screen names a
-  command section.** The callback is the invariant's one exception, and
-  detecting a framework by probing for it meant handing every tool an argument
+  command section.** A recipe's entry point is written for one tool, while the
+  callback is the one argument besides `--help` that every tool can be handed.
+  Detecting a framework by probing for it meant handing every tool an argument
   it might not implement. An argument is not inert on a tool that takes free
   text. Measured 2026-08-21: `wl-copy __complete` wrote `__complete` to the
   clipboard, then daemonized holding the stdout pipe, which stalled the walk

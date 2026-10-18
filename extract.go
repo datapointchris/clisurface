@@ -162,10 +162,11 @@ type Node struct {
 	Flags    []string `json:"flags,omitempty"`
 	Children []*Node  `json:"children,omitempty"`
 
-	// Body is everything the node printed for --help, filled only when
-	// [Options].WithBody is set. Short, Usage and Flags are all parsed out of
-	// it, so a consumer that wants to render the screen a person would see
-	// takes this rather than reassembling it from the three.
+	// Body is everything the node printed when asked for its help, filled only
+	// when [Options].WithBody is set. Usage and Flags are parsed out of it, so
+	// a consumer that wants to render the screen a person would see takes this
+	// rather than reassembling it. Short is not: it is the description the
+	// parent's listing gave this command.
 	Body string `json:"body,omitempty"`
 
 	// Unread marks a command that was named but not read, so its children are

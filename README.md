@@ -82,7 +82,7 @@ This library reads surfaces. It has no opinion about them. A consumer passes in
 a binary name and gets a tree back. Where a consumer keeps its tools and its
 snapshots never reaches this package, and neither does what it considers good.
 
-## `Extract` — three sources in order of trust, and never a bare subcommand
+## `Extract` — three sources in order of trust, and nothing it discovers run bare
 
 - **The framework's own completion callback**, where one exists. Cobra answers
   `__complete` with an exact command list. It is the one source here that is
@@ -138,11 +138,12 @@ there for a reason no reader can answer:
 A recipe is frozen knowledge and a reader is not. A tool a reader already
 handles never gets one.
 
-**A bare subcommand is never run.** The shape most worth finding is a noun that
-performs a read when invoked with no verb. Detecting it by running it would
-fire real reads against APIs and databases. Discovery runs `--help` at any
-depth and a framework's completion callback. The only other command it runs is
-a recipe's entry point, and each of those is written by hand.
+**Nothing the walk discovers is run bare.** The shape most worth finding is a
+noun that performs a read when invoked with no verb. Detecting it by running it
+would fire real reads against APIs and databases. Discovery runs `--help` at
+any depth and a framework's completion callback. The only other command it
+runs is a recipe's entry point, such as `git help -a`, and each of those is
+written by hand.
 
 That bounds what this library asks for, not what a tool does when asked.
 Answering `--help` means starting the program, so a group callback, an update

@@ -360,8 +360,8 @@ var direnvRecipe = recipe{
 // rows instead, which is readable.
 //
 // Below the top, `git <cmd> --help` opens a man page. `git <cmd> -h` prints
-// usage and flags straight to stdout with no pager, which is the whole reason
-// git needs no `help` verb and no relaxed invariant.
+// usage and flags straight to stdout with no pager, so `help -a` at the root is
+// the only command this runs that is not a help flag.
 var gitRecipe = recipe{
 	Help: func(binary string, path []string) (string, []string) {
 		if len(path) == 0 {
