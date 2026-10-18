@@ -182,8 +182,9 @@ variables reproduce what a pseudo-terminal produces, so none is involved. Two
 limits are the tools' own. Cobra tools emit no color under any environment. A
 tool that wraps its help in source ignores `COLUMNS`, and gh is one.
 
-`Node.Body` is what the tool printed, color codes included. `Usage` and `Flags`
-are parsed from the same screen with color codes removed. `Flags` is every
+`Node.Body` is what the tool printed, escape sequences included. `Usage` and
+`Flags` are parsed from the same screen with every escape sequence removed:
+color, hyperlinks and cursor movement alike. `Flags` is every
 `--long` flag the screen names, and short flags are not kept. `Short` is the
 description the parent's listing gave the command. The root has none. A command
 its parent lists without a description has an empty one, which is every aws

@@ -88,9 +88,10 @@ type Runner func(binary string, args ...string) string
 // and keeps no help bodies.
 type Options struct {
 	// Runner runs the tool. Nil selects the default, which executes the binary
-	// with NO_COLOR, TERM=dumb and a wide COLUMNS, then strips any escape
-	// sequences that survived. Supply one to read a tool under a pty, at a
-	// chosen width, or with color preserved.
+	// with NO_COLOR, TERM=dumb and a wide COLUMNS. Whatever escape sequences
+	// survive are stripped before any reader sees the text, under this runner
+	// or any other. Supply one to read a tool under a pty, at a chosen width,
+	// or with color preserved.
 	Runner Runner
 
 	// WithBody fills [Node].Body with each node's whole help screen. Off by
@@ -218,7 +219,14 @@ var (
 	flagRe      = regexp.MustCompile(`(--[a-z][a-z0-9-]*)`)
 	panelOpenRe = regexp.MustCompile(`^╭─+\s*(.*?)\s*─+╮`)
 	panelRowRe  = regexp.MustCompile(`^[│|]\s+([a-z][a-z0-9:_-]*)\s{2,}(.*?)\s*[│|]\s*$`)
-	ansiRe      = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+	// ansiRe matches every ECMA-48 escape sequence, in three alternatives
+	// tried in order. CSI carries color, cursor movement and erasing. The
+	// string sequences OSC, DCS, SOS, PM and APC run to BEL or ST, and a
+	// hyperlink is one. The last takes the two-byte escapes and the nF ones,
+	// such as the charset reset tput's sgr0 writes. It has to come last,
+	// because the bytes that open the other two fall inside its range.
+	ansiRe = regexp.MustCompile(`\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|[\]PX^_][^\x07\x1b]*(?:\x07|\x1b\\)|[\x20-\x2f]*[\x30-\x7e])`)
 )
 
 // skip are the commands every framework generates, which say nothing about the
@@ -265,8 +273,9 @@ func capture(binary string, args []string, env ...string) string {
 }
 
 // stripANSI removes escape sequences so a parser matches on the text rather
-// than on whatever the tool colored it with. Every reader runs on the result;
-// only [Node].Body keeps what the tool actually printed.
+// than on the color, hyperlinks or cursor movement the tool wrapped it in.
+// Every reader runs on the result; only [Node].Body keeps what the tool
+// actually printed.
 func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
 
 // Extract reads one binary's whole command tree.

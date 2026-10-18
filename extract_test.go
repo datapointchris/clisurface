@@ -705,21 +705,25 @@ func TestClapDescriptionsSurviveTheAlias(t *testing.T) {
 	}
 }
 
-// A consumer that renders a help screen wants the color the tool emitted, and
+// A consumer that renders a help screen wants the escapes the tool emitted, and
 // the parsers must not care either way. The Runner returns what the tool
 // printed; every reader normalizes; only Body keeps it.
-func TestColorDoesNotReachTheParsersButDoesReachTheBody(t *testing.T) {
+func TestEscapesDoNotReachTheParsersButDoReachTheBody(t *testing.T) {
 	clean := map[string]string{
 		"__complete ":      "list\tList\n:4\nCompletion ended with directive: x",
 		"__complete list ": ":4\nCompletion ended with directive: x",
 		"--help":           "A test tool.\n\nUsage:\n  demo [command]\n\nAvailable Commands:\n  list        List\n",
 		"list --help":      "List things.\n\nUsage:\n  demo list [flags]\n",
 	}
-	// Color every response, including the completion callback, so the readers
-	// are proven rather than merely unexercised.
+	// Dress every response, including the completion callback, so the readers
+	// are proven rather than merely unexercised. Each word gets a hyperlink
+	// (OSC 8), a color and an erase to end of line (both CSI).
+	dress := func(word string) string {
+		return "\x1b]8;;https://example.com\x1b\\\x1b[1;36m" + word + "\x1b[0m\x1b]8;;\x1b\\\x1b[K"
+	}
 	colored := map[string]string{}
 	for k, v := range clean {
-		colored[k] = strings.ReplaceAll(v, "list", "\x1b[1;36mlist\x1b[0m")
+		colored[k] = strings.ReplaceAll(strings.ReplaceAll(v, "List", dress("List")), "list", dress("list"))
 	}
 
 	paths := func(tool *Tool) string {
