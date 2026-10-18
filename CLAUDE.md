@@ -91,13 +91,19 @@ not restated here.
 ## Never write the breaking-change trailer in a commit message
 
 Those two words — either number, colon or not, subject or body — cut a major
-release here, and a major on a library is an outage rather than a version. The
+release once this repo is past 0.x, and a major from v1 on is an outage rather
+than a version. On 0.x, `allow-initial-development-versions` cuts them as a
+minor. The
 analyzer matches them unanchored against the raw message and ORs the result with
 the configured rules, so no config can stop it and it majors even a `fix:`
 commit. **The ban covers a commit that merely discusses the trailer**; name it
 some other way and never quote it.
 
-The module path carries no `/vN` suffix, so once a major exists every consumer
-resolving `@latest` silently keeps the highest v1 instead. Deliberate majors use
-`chore(release-major)`. The full reasoning and the reset procedure live in the
-house release standard.
+The module path carries no `/vN` suffix, so once a v2 exists every consumer
+resolving `@latest` silently keeps the highest v1 instead. The release workflow
+reads this repo's own `.semrelrc`, and there is none, so no commit subject maps
+to a major. Reaching 1.0 is dropping `allow-initial-development-versions`, and
+v1 needs no path suffix. A deliberate v2 or later needs a `.semrelrc` mapping
+`chore(release-major)` to a major, and the same release adds `/v2` to the module
+path. The full reasoning and the reset procedure live in the house release
+standard.
