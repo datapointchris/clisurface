@@ -518,20 +518,6 @@ func richChildren(help string) []child {
 	return kids
 }
 
-// headingChildren reads a heading ending in "commands:", then the indented rows
-// under it, until an unindented line ends the block.
-//
-// Unlike the section format this is walked rather than assembled in one pass,
-// because a tool writing this shape gives every group its own help screen
-// carrying its own heading.
-//
-// Nothing about the rows is pinned, because the tools writing this shape
-// disagree about all of it. The indent is two spaces in some and four in
-// others. The block is not always first — it can sit below "Options:", and a
-// tool may open several under headings of its own. A row may carry aliases
-// after the name, as `build, b`, of which only the first is a command. And a
-// row may carry no description at all, listing several commands separated by
-// commas instead.
 // commaRun reads a row that lists several commands separated by commas, which
 // is how a tool with too many to describe individually prints them.
 //
@@ -573,10 +559,12 @@ func commaRun(row string) []child {
 // daemon holding the pipe. A tool that lists no commands has nothing the probe
 // could tell us, and is exactly the tool the probe can damage.
 //
-// Deliberately broader than [isCommandHeading] in both directions it can be.
-// The colon is optional, because gh writes "CORE COMMANDS" and is still cobra.
+// Broader than [isCommandHeading] in the two directions cobra needs. The colon
+// is optional, because gh writes "CORE COMMANDS" and is still cobra.
 // Indentation is allowed, because sesh centers its "COMMANDS" heading inside a
-// styled box and is still cobra.
+// styled box and is still cobra. Narrower in one: "The commands are:" is the go
+// command's heading and no cobra tool's, so a tool shaped like go is never
+// handed the probe.
 //
 // What replaces the indent test is the gutter: a heading is the whole line,
 // while a row carries a description after two or more spaces. That is what
@@ -606,6 +594,10 @@ func listsCommands(help string) bool {
 // tools in a corpus of popular npm CLIs — eas, netlify, ntl, nypm, ipx among
 // them — read as flat tools while it was required.
 //
+// The go command writes "The commands are:", and there the colon is required.
+// Without it, a wrapped sentence ending in "the commands are" would open a
+// block.
+//
 // The heading must be unindented, and must be the whole line. Without the first
 // a description ending in "commands:" opens a block; without the second so does
 // terraform's row "metadata  Metadata related commands:", which is why the
@@ -617,7 +609,11 @@ func isCommandHeading(line, trimmed string) bool {
 	if strings.Contains(trimmed, "  ") || strings.Contains(trimmed, "\t") {
 		return false
 	}
-	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(trimmed, ":")), "commands")
+	lower := strings.ToLower(trimmed)
+	if strings.HasSuffix(lower, "commands are:") {
+		return true
+	}
+	return strings.HasSuffix(strings.TrimSuffix(lower, ":"), "commands")
 }
 
 // argparseChildren reads Python argparse's subparser block.
@@ -717,6 +713,20 @@ func traitletsChildren(help string) []child {
 	return kids
 }
 
+// headingChildren reads a heading ending in "commands:", then the indented rows
+// under it, until an unindented heading ends the block.
+//
+// Unlike the section format this is walked rather than assembled in one pass,
+// because a tool writing this shape gives every group its own help screen
+// carrying its own heading.
+//
+// Nothing about the rows is pinned, because the tools writing this shape
+// disagree about all of it. The indent is two spaces in some, four in others,
+// and a tab in the go command. The block is not always first — it can sit
+// below "Options:", and a tool may open several under headings of its own. A
+// row may carry aliases after the name, as `build, b`, of which only the first
+// is a command. And a row may carry no description at all, listing several
+// commands separated by commas instead.
 func headingChildren(binary, help string) []child {
 	var kids []child
 	inSection := false
@@ -732,7 +742,9 @@ func headingChildren(binary, help string) []child {
 		if trimmed == "" {
 			continue
 		}
-		if !strings.HasPrefix(line, " ") {
+		// A tab indents a row as well as spaces do. The go command indents
+		// every row with one.
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
 			// Only a heading ends the block, and the colon is what marks one.
 			// zk groups its commands under bare unindented labels — NOTEBOOK,
 			// NOTES — and closing on any unindented line dropped every command

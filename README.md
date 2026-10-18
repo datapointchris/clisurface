@@ -105,8 +105,9 @@ go doc -all github.com/datapointchris/clisurface Framework
 - `cobra` — names from `__complete`, kept where the help screen lists them too.
 - `rich` — the box-drawn panels Typer renders. A panel titled for options,
   arguments, usage or flags is skipped.
-- `heading` — indented rows under a heading ending in `commands`, with or
-  without a colon. clap, plain Click, oclif and yargs tools all write it.
+- `heading` — rows indented by spaces or a tab, under a heading ending in
+  `commands` with or without a colon, or in `commands are:`. clap, plain Click,
+  oclif and yargs tools write it, and so does the go command.
 - `section` — a bare `Commands` heading over an underline rule, with the whole
   tree on the root screen. It is assembled in one pass. A command is read on
   its own only when its row defers its verbs with `<verb>`, `<command>` or

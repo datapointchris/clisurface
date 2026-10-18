@@ -613,6 +613,37 @@ func TestEveryCommandBlockIsRead(t *testing.T) {
 	}
 }
 
+// The go command heads its list "The commands are:" and indents every row with
+// a tab. Two guards are in the fixture: the usage line above is tab-indented
+// too, and the help topics below are tab-indented rows under a heading that
+// does not name commands.
+const headingGoShape = "Go is a tool for managing Go source code.\n\n" +
+	"Usage:\n\n\tgo <command> [arguments]\n\n" +
+	"The commands are:\n\n" +
+	"\tbug         start a bug report\n" +
+	"\tbuild       compile packages and dependencies\n\n" +
+	"Use \"go help <command>\" for more information about a command.\n\n" +
+	"Additional help topics:\n\n" +
+	"\tbuildconstraint build constraints\n" +
+	"\tcache           build and test caching\n"
+
+func TestTheGoCommandShapeIsRead(t *testing.T) {
+	tool := extract(t, fakeRunner(map[string]string{
+		"--help":       headingGoShape,
+		"bug --help":   "usage: go bug\nRun 'go help bug' for details.\n",
+		"build --help": "usage: go build [-o output] [build flags] [packages]\nRun 'go help build' for details.\n",
+	}))
+	if tool.Framework != FrameworkHeading {
+		t.Fatalf("framework = %q, want heading", tool.Framework)
+	}
+	got := map[string]string{}
+	tool.Walk(func(n *Node) { got[strings.Join(n.Path, " ")] = n.Short })
+	want := map[string]string{"bug": "start a bug report", "build": "compile packages and dependencies"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("commands = %v, want %v", got, want)
+	}
+}
+
 // A tool with too many commands to describe individually prints them as a
 // comma-separated run, wrapped, with no descriptions.
 //
@@ -884,6 +915,7 @@ func TestARowEndingInCommandsIsStillNotAHeading(t *testing.T) {
 	for _, row := range []string{
 		"metadata  Metadata related commands:",
 		"npm -l             display usage info for all commands",
+		"Most of the commands are", // a wrapped sentence, which only the colon tells apart
 	} {
 		if isCommandHeading(row, strings.TrimSpace(row)) {
 			t.Errorf("%q opened a command block", row)
