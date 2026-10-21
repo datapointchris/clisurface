@@ -104,9 +104,9 @@ func extractByRecipe(binary string, r recipe, opts Options, run Runner) (*Tool, 
 // would have read them. It carries the path it was asked for, so a caller can
 // splice it in place of the stub it replaces.
 //
-// Only tools read by a recipe produce unread nodes; for anything else
-// this reads the subtree just the same, which is what makes it safe to call
-// without first asking how a tool was read.
+// Only tools read by a recipe produce unread nodes; for anything else this
+// reads the subtree just the same, which is what makes it safe to call without
+// first asking how a tool was read.
 func ExtractAt(binary string, path []string, opts Options) (*Node, error) {
 	run := limited(opts.runner(), opts.concurrency())
 	r, ok := recipeFor(binary)

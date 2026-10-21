@@ -173,10 +173,8 @@ func TestSectionRowsKeepArgsOutAndNestMultiWord(t *testing.T) {
 	}
 }
 
-// A row ending its command words in a verb placeholder lists its verbs on its
-// own screen, which is the one read a section-format tree earns. A leaf the
-// root screen shows as complete is never handed --help, because a hand-rolled
-// command may take it as an argument.
+// A leaf the root screen shows as complete is never handed --help, because a
+// hand-rolled command may take it as an argument.
 func TestASectionRowDeferringItsVerbsIsReadFromItsOwnScreen(t *testing.T) {
 	root := "\nCommands\n───────\n" +
 		"  demo backup run [--label <note>]  Copy the paths\n" +

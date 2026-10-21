@@ -54,9 +54,8 @@ does not.
 
 - **A recipe is frozen and a reader is not, so a tool a reader already handles
   never gets one.** Every entry in the table earns its place by being
-  unreachable otherwise, and a sweep over every CLI a machine declares is what
-  proves it — run it before and after and diff every framework and node count.
-  This repo's status notes say where the sweep lives.
+  unreachable otherwise. Reading every CLI on PATH before and after a change,
+  and diffing each tool's framework and node count, is what proves it.
 
 - **The core takes no third-party dependencies; anything that needs one gets its
   own package.** What binds is containment rather than a blanket ban, so a
@@ -95,11 +94,10 @@ not restated here.
 Those two words — either number, colon or not, subject or body — cut a major
 release once this repo is past 0.x, and a major from v1 on is an outage rather
 than a version. On 0.x, `allow-initial-development-versions` cuts them as a
-minor. The
-analyzer matches them unanchored against the raw message and ORs the result with
-the configured rules, so no config can stop it and it majors even a `fix:`
-commit. **The ban covers a commit that merely discusses the trailer**; name it
-some other way and never quote it.
+minor. The analyzer matches them unanchored against the raw message and ORs the
+result with the configured rules, so no config can stop it and it majors even a
+`fix:` commit. **The ban covers a commit that merely discusses the trailer**;
+name it some other way and never quote it.
 
 The module path carries no `/vN` suffix, so once a v2 exists every consumer
 resolving `@latest` silently keeps the highest v1 instead. The release workflow

@@ -82,7 +82,7 @@ This library reads surfaces. It has no opinion about them. A consumer passes in
 a binary name and gets a tree back. Where a consumer keeps its tools and its
 snapshots never reaches this package, and neither does what it considers good.
 
-## `Extract` — three sources in order of trust, and nothing it discovers run bare
+## `Extract` — three sources in order of trust, and nothing it discovers is run bare
 
 - **The framework's own completion callback**, where one exists. Cobra answers
   `__complete` with an exact command list. It is the one source here that is
@@ -179,17 +179,18 @@ clisurface.Options{
 `DisplayRunner` reads a tool the way a person sees it. It declares
 `TERM=xterm-256color` and forces color rather than inheriting the terminal, so
 the text does not change with the terminal the consumer runs in. Those
-variables reproduce what a pseudo-terminal produces, so none is involved. Two
-limits are the tools' own. Cobra tools emit no color under any environment. A
-tool that wraps its help in source ignores `COLUMNS`, and gh is one.
+variables reproduce what a pseudo-terminal produces, so it opens no
+pseudo-terminal. Two limits are the tools' own. Cobra tools emit no color under
+any environment. A tool that wraps its help in source ignores `COLUMNS`, and gh
+is one.
 
 `Node.Body` is what the tool printed, escape sequences included. `Usage` and
 `Flags` are parsed from the same screen with every escape sequence removed:
-color, hyperlinks and cursor movement alike. `Flags` is every
-`--long` flag the screen names, and short flags are not kept. `Short` is the
-description the parent's listing gave the command. The root has none. A command
-its parent lists without a description has an empty one, which is every aws
-name and every verb below a git subcommand.
+color, hyperlinks and cursor movement alike. `Flags` is every `--long` flag the
+screen names, and short flags are not kept. `Short` is the description the
+parent's listing gave the command. The root has none. A command its parent
+lists without a description has an empty one, which is every aws name and every
+verb below a git subcommand.
 
 Reading costs one process start per command, plus one completion call per
 command on a cobra tool. The walk itself costs next to nothing, so
