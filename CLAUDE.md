@@ -105,5 +105,4 @@ reads this repo's own `.semrelrc`, and there is none, so no commit subject maps
 to a major. Reaching 1.0 is dropping `allow-initial-development-versions`, and
 v1 needs no path suffix. A deliberate v2 or later needs a `.semrelrc` mapping
 `chore(release-major)` to a major, and the same release adds `/v2` to the module
-path. The full reasoning and the reset procedure live in the house release
-standard.
+path.

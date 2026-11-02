@@ -714,8 +714,8 @@ func TestEscapesDoNotReachTheParsersButDoReachTheBody(t *testing.T) {
 		"list --help":      "List things.\n\nUsage:\n  demo list [flags]\n",
 	}
 	// Dress every response, including the completion callback, so the readers
-	// are proven rather than merely unexercised. Each word gets a hyperlink
-	// (OSC 8), a color and an erase to end of line (both CSI).
+	// are proven rather than merely unexercised. Every `list` and `List` gets a
+	// hyperlink (OSC 8), a color and an erase to end of line (both CSI).
 	dress := func(word string) string {
 		return "\x1b]8;;https://example.com\x1b\\\x1b[1;36m" + word + "\x1b[0m\x1b]8;;\x1b\\\x1b[K"
 	}

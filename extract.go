@@ -752,8 +752,7 @@ func headingChildren(binary, help string) []child {
 		if trimmed == "" {
 			continue
 		}
-		// A tab indents a row as well as spaces do. The go command indents
-		// every row with one.
+		// The go command indents every row with a tab.
 		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
 			// Only a heading ends the block, and the colon is what marks one.
 			// zk groups its commands under bare unindented labels — NOTEBOOK,
