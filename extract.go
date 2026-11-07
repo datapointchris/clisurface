@@ -47,6 +47,11 @@ const (
 	// description below it.
 	FrameworkTraitlets Framework = "traitlets"
 
+	// FrameworkGrouped files commands under headings of the tool's own, none of
+	// them saying "commands", with help at every level, so it is walked. kong
+	// writes it where commands declare a group.
+	FrameworkGrouped Framework = "grouped"
+
 	// FrameworkFlat is a tool presenting no subcommands at all.
 	FrameworkFlat Framework = "flat"
 )
@@ -239,6 +244,19 @@ var skip = map[string]bool{"help": true, "completion": true, "__complete": true}
 // 12-command tool into a 1992-node walk.
 var notCommandPanel = []string{"option", "argument", "usage", "flag"}
 
+// notCommandGroup are the titles a hand-written screen files something other
+// than commands under, beyond what notCommandPanel already names.
+var notCommandGroup = []string{
+	"example", "environment", "exit", "output", "see also", "note", "file", "path", "variable", "format", "key",
+}
+
+// minGroupedRows is the fewest rows that read as a command list. One indented
+// row under a title is as likely to be a sentence.
+const minGroupedRows = 2
+
+// maxGroupTitleWords keeps a sentence ending in a colon from opening a block.
+const maxGroupTitleWords = 4
+
 func execRunner(binary string, args ...string) string {
 	return capture(binary, args, "COLUMNS=200", "NO_COLOR=1", "TERM=dumb")
 }
@@ -334,6 +352,11 @@ func detectFramework(binary, rootHelp string, run Runner) Framework {
 	if len(traitletsChildren(rootHelp)) > 0 {
 		return FrameworkTraitlets
 	}
+	// Last, because its only mark is a title of the tool's choosing, so it may
+	// claim only a screen no reader with a firmer mark recognized.
+	if len(groupedChildren(rootHelp)) >= minGroupedRows {
+		return FrameworkGrouped
+	}
 	return FrameworkFlat
 }
 
@@ -396,6 +419,8 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 		kids = argparseChildren(help)
 	case FrameworkTraitlets:
 		kids = traitletsChildren(help)
+	case FrameworkGrouped:
+		kids = groupedChildren(help)
 	case FrameworkSection, FrameworkFlat:
 		kids = nil
 	}
@@ -635,6 +660,8 @@ func isCommandHeading(line, trimmed string) bool {
 // argument, and requiring it is the whole guard. `pre-commit --help` and
 // `pre-commit run --help` both write "positional arguments:"; only the first
 // follows it with choices, and the second names a single argument called hook.
+// A subparser given metavar="<command>" prints that word in place of the braces,
+// and it stands for a verb as the braces do.
 func argparseChildren(help string) []child {
 	lines := strings.Split(help, "\n")
 	for i, line := range lines {
@@ -645,7 +672,11 @@ func argparseChildren(help string) []child {
 		for choices < len(lines) && strings.TrimSpace(lines[choices]) == "" {
 			choices++
 		}
-		if choices >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[choices]), "{") {
+		if choices >= len(lines) {
+			return nil
+		}
+		first := strings.TrimSpace(lines[choices])
+		if !strings.HasPrefix(first, "{") && !verbPlaceholders[first] {
 			return nil
 		}
 
@@ -783,6 +814,77 @@ func headingChildren(binary, help string) []child {
 		kids = append(kids, child{name, strings.TrimSpace(desc)})
 	}
 	return kids
+}
+
+// groupedChildren reads a screen filing its commands under titles of its own.
+//
+//	Planning:
+//	  ideas list                     List every idea
+//	  ideas promote <idea> --summary <text> [flags]
+//	                                 Create the initiative an idea becomes
+//	Doing:
+//	  next                           The order to take the work in
+//
+// A row naming a noun and its verb yields the noun once, because the noun's own
+// screen lists the verb. That verb's description says nothing about the noun, so
+// the noun takes none.
+//
+// A title can head anything, so a row must show it is a command. It sits at the
+// two-space indent, which keeps a wrapped description out. It carries a gutter,
+// or overflows with its description on the deeper line below, which keeps an
+// indented sentence out. Any other unindented line closes the block.
+func groupedChildren(help string) []child {
+	var kids []child
+	seen := map[string]bool{}
+	inGroup := false
+	lines := strings.Split(help, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			inGroup = isGroupTitle(trimmed)
+			continue
+		}
+		if !inGroup || !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+			continue
+		}
+		left, desc, found := strings.Cut(trimmed, "  ")
+		if !found && !overflows(lines, i) {
+			continue
+		}
+		words := strings.Fields(left)
+		if !isCommandName(words[0]) || skip[words[0]] || seen[words[0]] {
+			continue
+		}
+		seen[words[0]] = true
+		if len(words) > 1 && isCommandName(words[1]) {
+			desc = ""
+		}
+		kids = append(kids, child{words[0], strings.TrimSpace(desc)})
+	}
+	return kids
+}
+
+// isGroupTitle says whether an unindented line is a short title that could head
+// a block of commands.
+func isGroupTitle(trimmed string) bool {
+	if !strings.HasSuffix(trimmed, ":") || len(strings.Fields(trimmed)) > maxGroupTitleWords {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	for _, word := range notCommandGroup {
+		if strings.Contains(lower, word) {
+			return false
+		}
+	}
+	return !titleIsNotCommands(trimmed)
+}
+
+// overflows says whether the next line continues this row at a deeper indent.
+func overflows(lines []string, i int) bool {
+	return i+1 < len(lines) && strings.HasPrefix(lines[i+1], "   ") && strings.TrimSpace(lines[i+1]) != ""
 }
 
 // commandFromRow reads the command out of the left half of a row, which carries

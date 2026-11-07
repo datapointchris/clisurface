@@ -112,10 +112,14 @@ go doc -all github.com/datapointchris/clisurface Framework
   tree on the root screen. It is assembled in one pass. A command is read on
   its own only when its row defers its verbs with `<verb>`, `<command>` or
   `<subcommand>`.
-- `argparse` — Python's standard library, which lists brace-wrapped choices
-  under `positional arguments:`.
+- `argparse` — Python's standard library, which lists brace-wrapped choices, or
+  a `<command>` metavar, under `positional arguments:`.
 - `traitlets` — the IPython framework every jupyter binary is built on, with a
   `Subcommands` heading over a rule.
+- `grouped` — commands filed under short titles of the tool's own, as kong
+  prints where commands declare a group. A row may name a noun and its verb, and
+  the noun's own screen lists the verb. It is tried last, and takes at least two
+  rows, because a title alone says nothing.
 - `recipe` — read through a hand-written recipe.
 - `flat` — no reader found a command list.
 

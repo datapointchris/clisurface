@@ -147,6 +147,93 @@ Options
   -c, --config <name>  Config to use
 `
 
+const groupedRoot = `demo — a tracker
+
+Prose above the commands, ending in a sentence with a colon like this one that runs on:
+  not-a-command  because too many words opened it
+
+Start here:
+  next                           The order to take the work in,
+                                 wrapped onto a second line
+  show <number>                  Show a record
+
+Planning:
+  ideas list                     List every idea
+  ideas promote <idea> --summary <text> [flags]
+                                 Create the initiative an idea becomes
+
+Details:
+  sentences are not commands
+  and neither is this one
+
+Examples:
+  demo next  prints the order
+
+Environment:
+  token  read from the keyring
+
+Flags:
+  -h, --help  Show help
+`
+
+func TestGroupedHeadingsYieldEachNounOnceAndKeepProseOut(t *testing.T) {
+	run := fakeRunner(map[string]string{
+		"--help":               groupedRoot,
+		"next --help":          "The order\n\nFlags:\n  --json  as JSON\n",
+		"show --help":          "Show a record\n\nArguments:\n  <number>  which\n",
+		"ideas --help":         "demo ideas\n\nReading:\n  list  List every idea\n\nActing:\n  promote <idea>  Create the initiative\n",
+		"ideas list --help":    "List every idea\n\nFlags:\n  --json  as JSON\n",
+		"ideas promote --help": "Create the initiative\n\nFlags:\n  --summary=TEXT  what it is\n",
+	})
+	tool := extract(t, run)
+	if tool.Framework != FrameworkGrouped {
+		t.Fatalf("framework = %q, want grouped", tool.Framework)
+	}
+	got := map[string]string{}
+	tool.Walk(func(n *Node) { got[strings.Join(n.Path, " ")] = n.Short })
+	want := map[string]string{
+		"next":          "The order to take the work in,",
+		"show":          "Show a record",
+		"ideas":         "",
+		"ideas list":    "List every idea",
+		"ideas promote": "Create the initiative",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("paths = %v, want %v", keys(got), want)
+	}
+	for path, short := range want {
+		if have, ok := got[path]; !ok || have != short {
+			t.Errorf("%q short = %q (present %v), want %q", path, have, ok, short)
+		}
+	}
+}
+
+func TestOneRowUnderATitleStaysFlat(t *testing.T) {
+	help := "A tool with one thing to say.\n\nAlso:\n  see  the manual for more\n"
+	tool := extract(t, fakeRunner(map[string]string{"--help": help}))
+	if tool.Framework != FrameworkFlat {
+		t.Fatalf("framework = %q, want flat", tool.Framework)
+	}
+}
+
+func TestArgparseVerbPlaceholderListsCommandsAndAnArgumentDoesNot(t *testing.T) {
+	root := "usage: demo [-h] <command> ...\n\npositional arguments:\n  <command>\n    new   isolate a session,\n          wrapped\n    land  land it\n\noptions:\n  -h, --help  show this\n"
+	tool := extract(t, fakeRunner(map[string]string{"--help": root, "new --help": "usage: demo new\n", "land --help": "usage: demo land\n"}))
+	if tool.Framework != FrameworkArgparse {
+		t.Fatalf("framework = %q, want argparse", tool.Framework)
+	}
+	var paths []string
+	tool.Walk(func(n *Node) { paths = append(paths, strings.Join(n.Path, " ")) })
+	if strings.Join(paths, ",") != "new,land" {
+		t.Errorf("paths = %v, want new and land", paths)
+	}
+
+	argument := "usage: demo [-h] <path>\n\npositional arguments:\n  <path>\n    where  it reads\n"
+	if kids := argparseChildren(argument); kids != nil {
+		t.Errorf("an ordinary argument read as commands: %v", kids)
+	}
+}
+
 func TestSectionRowsKeepArgsOutAndNestMultiWord(t *testing.T) {
 	run := fakeRunner(map[string]string{"--help": sectionHelp})
 	tool := extract(t, run)
