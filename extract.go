@@ -181,6 +181,11 @@ type Node struct {
 	// operations, and reading all of it costs twelve seconds to show one screen.
 	Unread bool `json:"unread,omitempty"`
 
+	// Bounded marks a command the walk stopped at, under [Options].MaxDepth or a
+	// recipe's own depth, so nothing below it was looked for. Its children are
+	// unknown rather than absent, and a leaf at the bound is marked the same way.
+	Bounded bool `json:"bounded,omitempty"`
+
 	// childIndex is scratch used while assembling a section-format tree, where
 	// a parent is implied by its rows rather than listed on its own.
 	childIndex map[string]*Node
@@ -388,7 +393,11 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 	// screen, which hand-rolled help renderers routinely do. Reading that as
 	// sub's own children makes every command list its siblings, at every level,
 	// until the depth bound stops it.
-	if depth >= w.opts.maxDepth() || (parentHelp != "" && help == parentHelp) {
+	if parentHelp != "" && help == parentHelp {
+		return n
+	}
+	if depth >= w.opts.maxDepth() {
+		n.Bounded = true
 		return n
 	}
 
@@ -965,7 +974,11 @@ func sectionTree(binary, help string) []*Node {
 func readDeferredVerbs(w walk, nodes []*Node, rootHelp string) {
 	var wg sync.WaitGroup
 	for _, node := range nodes {
-		if !node.verbsElsewhere || len(node.Children) > 0 || len(node.Path) >= w.opts.maxDepth() {
+		if !node.verbsElsewhere || len(node.Children) > 0 {
+			continue
+		}
+		if len(node.Path) >= w.opts.maxDepth() {
+			node.Bounded = true
 			continue
 		}
 		wg.Add(1)

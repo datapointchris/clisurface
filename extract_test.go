@@ -893,14 +893,17 @@ func TestMaxDepthBoundsTheWalk(t *testing.T) {
 		"a b c --help":      "Usage:\n  demo a b c [flags]\n",
 	}
 
+	// bounded is the command the walk stopped at, which a consumer must not
+	// read as a leaf.
 	for _, tc := range []struct {
-		name  string
-		depth int
-		want  int
+		name    string
+		depth   int
+		want    int
+		bounded string
 	}{
-		{"zero takes the default and reaches every node", 0, 3},
-		{"one stops after the first level", 1, 1},
-		{"two stops after the second", 2, 2},
+		{"zero takes the default and reaches every node", 0, 3, ""},
+		{"one stops after the first level", 1, 1, "a"},
+		{"two stops after the second", 2, 2, "a b"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tool, err := Extract("demo", Options{Runner: fakeRunner(responses), MaxDepth: tc.depth})
@@ -908,9 +911,18 @@ func TestMaxDepthBoundsTheWalk(t *testing.T) {
 				t.Fatalf("Extract: %v", err)
 			}
 			var n int
-			tool.Walk(func(*Node) { n++ })
+			var bounded []string
+			tool.Walk(func(node *Node) {
+				n++
+				if node.Bounded {
+					bounded = append(bounded, strings.Join(node.Path, " "))
+				}
+			})
 			if n != tc.want {
 				t.Errorf("walked %d nodes at MaxDepth %d, want %d", n, tc.depth, tc.want)
+			}
+			if got := strings.Join(bounded, ","); got != tc.bounded {
+				t.Errorf("bounded %q at MaxDepth %d, want %q", got, tc.depth, tc.bounded)
 			}
 		})
 	}

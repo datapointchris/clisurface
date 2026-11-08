@@ -159,6 +159,7 @@ func buildByRecipe(binary string, r recipe, opts Options, run Runner, path []str
 	}
 	n := recipeNode(binary, path, short, raw, opts)
 	if level >= maxDepth {
+		n.Bounded = true
 		return n
 	}
 
