@@ -26,10 +26,12 @@ const maxSectionTitleWords = 8
 // are counted as strings.Split(body, "\n") counts them, and the lines above the
 // first heading belong to no section.
 //
-// A heading is a short line at the left edge, after a blank line, with an
-// indented line or a rule under it. That one shape covers clap's "Options:",
-// gh's "GENERAL COMMANDS", cobra's "Global Flags:", git's "Main Porcelain
-// Commands" and a man page's "DESCRIPTION". It must be the whole line, as
+// A heading is a short line at the page's margin, after a blank line, with an
+// indented line or a rule under it, or under one blank line. That one shape
+// covers clap's "Options:", gh's "GENERAL COMMANDS", cobra's "Global Flags:",
+// git's "Main Porcelain Commands", a man page's "DESCRIPTION" and fang's
+// "COMMANDS". The margin is where the least indented line starts, which is the
+// left edge except where fang indents a whole screen. It must be the whole line, as
 // [listsCommands] holds a command heading to be, so a row carrying its
 // description after two spaces is never one. It carries nothing after a colon
 // either, so "Usage: uv add [OPTIONS]" is a line of text, and the description
@@ -39,6 +41,12 @@ func Sections(body string) []Section {
 	plain := make([]string, len(lines))
 	for i, line := range lines {
 		plain[i] = strings.TrimRight(stripANSI(line), " \t\r")
+	}
+	margin := pageMargin(plain)
+	for i, line := range plain {
+		if line != "" {
+			plain[i] = line[margin:]
+		}
 	}
 	var sections []Section
 	for i := range plain {
@@ -72,9 +80,28 @@ func isSectionHeading(lines []string, i int) bool {
 	if !unicode.IsLetter(last) && !unicode.IsDigit(last) && last != ':' && last != ')' {
 		return false
 	}
-	next := lines[i+1]
-	if strings.TrimSpace(next) == "" {
+	next := i + 1
+	if lines[next] == "" && next+1 < len(lines) {
+		next++
+	}
+	row := lines[next]
+	if row == "" {
 		return false
 	}
-	return isRule(strings.TrimSpace(next)) || next[0] == ' ' || next[0] == '\t'
+	return isRule(strings.TrimSpace(row)) || row[0] == ' ' || row[0] == '\t'
+}
+
+// pageMargin is how many spaces start every non-blank line.
+func pageMargin(lines []string) int {
+	margin := -1
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if margin < 0 || indent < margin {
+			margin = indent
+		}
+	}
+	return max(margin, 0)
 }
