@@ -220,6 +220,22 @@ the path it was asked for, so a caller splices it in place of the stub. It
 accepts any tool, so a caller never has to ask how a tool was read first. On a
 tool no recipe covers, it reads the whole tool again and returns the subtree.
 
+## `Sections` — a help screen splits at the same headings its readers trust
+
+```go
+for _, s := range clisurface.Sections(node.Body) {
+ fmt.Println(s.Title, s.Line, s.End) // Options 4 21
+}
+```
+
+A heading is a short line at the left edge, after a blank line, with an
+indented line or a rule of `-`, `=`, `─` or `━` under it. It must be the whole
+line, so a command row carrying its description after two spaces is never
+one. A line with text after its colon, such as `Usage: uv add [OPTIONS]`, is
+not one either. Colors are ignored, so a body read with `DisplayRunner` splits
+the same as one read for parsing. Lines count as `strings.Split(body, "\n")`
+counts them, and what sits above the first heading belongs to no section.
+
 ## `Save`, `Load`, `Compare` — a kept surface turns a removed flag into a finding
 
 ```go
