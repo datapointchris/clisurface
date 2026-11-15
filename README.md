@@ -180,13 +180,13 @@ clisurface.Options{
 }
 ```
 
-`DisplayRunner` reads a tool the way a person sees it. It declares
-`TERM=xterm-256color` and forces color rather than inheriting the terminal, so
-the text does not change with the terminal the consumer runs in. Those
-variables reproduce what a pseudo-terminal produces, so it opens no
-pseudo-terminal. Two limits are the tools' own. Cobra tools emit no color under
-any environment. A tool that wraps its help in source ignores `COLUMNS`, and gh
-is one.
+`DisplayRunner` reads a tool the way a person sees it, in color and wrapped to a
+given width, for a screen that will be rendered rather than only parsed. Its
+doc says which environment it declares and which tools ignore it:
+
+```bash
+go doc github.com/datapointchris/clisurface DisplayRunner
+```
 
 `Node.Body` is what the tool printed, escape sequences included. `Usage` and
 `Flags` are parsed from the same screen with every escape sequence removed:
