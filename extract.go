@@ -81,7 +81,8 @@ const pipeDelay = 2 * time.Second
 
 // A Runner runs a command and returns everything it printed, stdout and stderr
 // together. It returns the empty string when the command could not be run at
-// all, which is how [Extract] tells a missing binary from a quiet one.
+// all. [Extract] refuses a root that printed nothing, and cannot tell a missing
+// binary from one that prints nothing for --help, so it refuses both alike.
 //
 // A non-zero exit is not a failure here. Several tools print perfectly good
 // help and then exit 1, so the status is deliberately ignored and only the
