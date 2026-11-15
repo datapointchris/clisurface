@@ -26,8 +26,9 @@ const (
 	FrameworkRich Framework = "rich"
 
 	// FrameworkSection is a bare "Commands" heading under an underline rule,
-	// with the whole tree on the root screen and no help per command, so it is
-	// assembled in one pass rather than walked.
+	// with the whole tree on the root screen, so it is assembled from that
+	// screen rather than walked. Only a command whose row defers its verbs with
+	// <verb>, <command> or <subcommand> is read on its own screen.
 	FrameworkSection Framework = "section"
 
 	// FrameworkHeading is a heading ending in "commands:" followed by indented
