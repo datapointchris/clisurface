@@ -319,7 +319,8 @@ func Extract(binary string, opts Options) (*Tool, error) {
 	if strings.TrimSpace(rootHelp) == "" {
 		return nil, fmt.Errorf("clisurface: %q printed no help; is it on PATH?", binary)
 	}
-	w := walk{binary: binary, fw: detectFramework(binary, rootHelp, run), opts: opts, run: run}
+	fw, rootCompletion := detectFramework(binary, rootHelp, run)
+	w := walk{binary: binary, fw: fw, opts: opts, run: run, rootCompletion: rootCompletion}
 	t := &Tool{Binary: binary, Framework: w.fw}
 	t.Root = build(w, nil, "", 0, "", rootRaw)
 	return t, nil
@@ -332,37 +333,46 @@ type walk struct {
 	fw     Framework
 	opts   Options
 	run    Runner
+
+	// rootCompletion is what the root's completion callback answered while the
+	// framework was detected, so build reads the root from it rather than
+	// running the probe a second time. Nil unless the tool is cobra.
+	rootCompletion []child
 }
 
 // detectFramework takes the root help rather than fetching it, because Extract
-// has already paid for that spawn and spawning is the whole cost of a read.
-func detectFramework(binary, rootHelp string, run Runner) Framework {
-	if listsCommands(rootHelp) && cobraChildren(binary, nil, run) != nil {
-		return FrameworkCobra
+// has already paid for that spawn and spawning is the whole cost of a read. For
+// a cobra tool it also returns the root's completion answer, which detecting
+// the framework already paid for in the same way.
+func detectFramework(binary, rootHelp string, run Runner) (Framework, []child) {
+	if listsCommands(rootHelp) {
+		if kids := cobraChildren(binary, nil, run); kids != nil {
+			return FrameworkCobra, kids
+		}
 	}
 	if strings.Contains(rootHelp, "╭─") {
-		return FrameworkRich
+		return FrameworkRich, nil
 	}
 	if len(sectionRows(binary, rootHelp)) > 0 {
-		return FrameworkSection
+		return FrameworkSection, nil
 	}
 	// After section, because that format writes a bare "Commands" heading with
 	// an underline rule where this one writes "…commands:" and no rule.
 	if len(headingChildren(binary, rootHelp)) > 0 {
-		return FrameworkHeading
+		return FrameworkHeading, nil
 	}
 	if len(argparseChildren(rootHelp)) > 0 {
-		return FrameworkArgparse
+		return FrameworkArgparse, nil
 	}
 	if len(traitletsChildren(rootHelp)) > 0 {
-		return FrameworkTraitlets
+		return FrameworkTraitlets, nil
 	}
 	// Last, because its only mark is a title of the tool's choosing, so it may
 	// claim only a screen no reader with a firmer mark recognized.
 	if len(groupedChildren(rootHelp)) >= minGroupedRows {
-		return FrameworkGrouped
+		return FrameworkGrouped, nil
 	}
-	return FrameworkFlat
+	return FrameworkFlat, nil
 }
 
 // build reads one node and everything below it. prefetched is the help screen
@@ -419,7 +429,11 @@ func build(w walk, path []string, short string, depth int, parentHelp, prefetche
 		// argument values, so a command accepting one of three fixed keywords
 		// offers those three and they parse as three subcommands. Only names
 		// the help screen also presents as commands survive.
-		kids = keepListed(cobraChildren(w.binary, path, w.run), helpCommandNames(help))
+		completion := w.rootCompletion
+		if len(path) > 0 {
+			completion = cobraChildren(w.binary, path, w.run)
+		}
+		kids = keepListed(completion, helpCommandNames(help))
 	case FrameworkRich:
 		kids = richChildren(help)
 	case FrameworkHeading:

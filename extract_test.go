@@ -387,14 +387,17 @@ func TestACommandRowIsNotACommandHeading(t *testing.T) {
 	}
 }
 
-// Extract runs the root --help to detect the framework, and the walk must not
-// run it again. A second read doubles the cost of every tool and doubles any
-// side effect it has: claude-desktop ignores --help and launches Electron, so
-// it was launched twice and took 40s to abandon instead of 20s.
+// Extract runs the root --help and the root completion probe to detect the
+// framework, and the walk must not run either again. A second read doubles the
+// cost of every tool and doubles any side effect it has: claude-desktop ignores
+// --help and launches Electron, so it was launched twice and took 40s to
+// abandon instead of 20s.
 func TestTheRootHelpIsReadOnce(t *testing.T) {
 	responses := map[string]string{
-		"--help":      "Usage:\n  demo [command]\n\nAvailable Commands:\n  list   List them\n",
-		"list --help": "Usage:\n  demo list [flags]\n",
+		"--help":           "Usage:\n  demo [command]\n\nAvailable Commands:\n  list   List them\n",
+		"list --help":      "Usage:\n  demo list [flags]\n",
+		"__complete ":      "list\tList them\n:4\nCompletion ended with directive: x",
+		"__complete list ": ":4\nCompletion ended with directive: x",
 	}
 	var mu sync.Mutex
 	calls := map[string]int{}
@@ -406,14 +409,21 @@ func TestTheRootHelpIsReadOnce(t *testing.T) {
 		return responses[key]
 	}
 
-	if _, err := Extract("demo", Options{Runner: run}); err != nil {
+	tool, err := Extract("demo", Options{Runner: run})
+	if err != nil {
 		t.Fatalf("Extract: %v", err)
+	}
+	if tool.Framework != FrameworkCobra || len(tool.Root.Children) != 1 || tool.Root.Children[0].Name != "list" {
+		t.Fatalf("got framework %q with children %v, want cobra with list", tool.Framework, tool.Root.Children)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
 	if calls["--help"] != 1 {
 		t.Errorf("ran the root --help %d times, want 1", calls["--help"])
+	}
+	if calls["__complete "] != 1 {
+		t.Errorf("ran the root completion probe %d times, want 1", calls["__complete "])
 	}
 	if calls["list --help"] != 1 {
 		t.Errorf("ran `list --help` %d times, want 1", calls["list --help"])
