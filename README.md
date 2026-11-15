@@ -59,11 +59,11 @@ Any CLI on `PATH` can take the place of `git`. `Tool.Framework` names the
 reader that read it. `Walk` visits every command below the root, parents
 first.
 
-`Extract` refuses a name that prints nothing for `--help`, and the program
-exits 1 on it:
+`Extract` refuses a name that prints nothing for `--help`. The program's
+`log.Fatal` prints that error after the date and time, then exits 1:
 
 ```text
-clisurface: "nosuchtool" printed no help; is it on PATH?
+2026/11/14 14:20:30 clisurface: "nosuchtool" printed no help; is it on PATH?
 ```
 
 An empty tree would be well formed and carry no sign that anything was missing.
