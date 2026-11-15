@@ -228,8 +228,10 @@ for _, s := range clisurface.Sections(node.Body) {
 }
 ```
 
-A heading is a short line at the left edge, after a blank line, with an
-indented line or a rule of `-`, `=`, `─` or `━` under it. It must be the whole
+A heading is a short line at the page's margin, after a blank line, with an
+indented line or a rule of `-`, `=`, `─` or `━` under it, or under one blank
+line. The margin is where the least indented line starts, which is the left
+edge except where fang indents a whole screen. It must be the whole
 line, so a command row carrying its description after two spaces is never
 one. A line with text after its colon, such as `Usage: uv add [OPTIONS]`, is
 not one either. Colors are ignored, so a body read with `DisplayRunner` splits
