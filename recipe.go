@@ -47,8 +47,8 @@ type recipe struct {
 	// caller to fill with [ExtractAt] when someone actually looks at it.
 	//
 	// Zero disables it and the whole tree is read. aws sets 1: reading every
-	// service costs 438 calls and twelve seconds, and reading one costs 175ms,
-	// so a person browsing three services pays half a second rather than twelve.
+	// service up front costs one call per service, and reading one costs one
+	// call, so a person browsing three services pays for three.
 	LazyBelow int
 }
 
@@ -181,8 +181,8 @@ func buildByRecipe(binary string, r recipe, opts Options, run Runner, path []str
 	for i, k := range real {
 		childPath := append(append([]string{}, path...), k.name)
 		if r.LazyBelow > 0 && level+1 >= r.LazyBelow {
-			// Named but not read. Reading every one of aws's 438 services costs
-			// twelve seconds for a screen showing one of them.
+			// Named but not read. Reading every one of aws's services costs a
+			// call per service for a screen showing one of them.
 			stub := recipeNode(binary, childPath, k.desc, "", opts)
 			stub.Unread = true
 			n.Children[i] = stub
@@ -239,15 +239,16 @@ const awsDepth = 2
 // and env(1) is on every machine this runs on, so the recipe needs no change to
 // the Runner contract to reach it.
 //
-// The tree is 438 services over 19,292 operations, and reading it costs one
-// call per service rather than one per operation, because a node at awsDepth is
-// not read at all. There are no descriptions anywhere in a completion reply, so
+// `COMP_LINE='aws ' COMP_POINT=4 aws_completer` lists the services, the same
+// call this recipe makes at the root. Reading the tree costs one call per
+// service rather than one per operation, because a node at awsDepth is not read
+// at all. There are no descriptions anywhere in a completion reply, so
 // the tree carries names only — enough to leave with the command, which is what
 // browsing is for.
 var awsRecipe = recipe{
 	MaxDepth: awsDepth,
 	// A service's operations are read when someone opens that service. Reading
-	// all 438 up front takes twelve seconds; reading one takes 175ms.
+	// all of them up front costs a call per service; reading one costs one call.
 	LazyBelow: 1,
 	Help: func(_ string, path []string) (string, []string) {
 		if len(path) >= awsDepth {

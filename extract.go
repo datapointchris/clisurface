@@ -64,10 +64,10 @@ const (
 // "Arguments" panel once did. The walk is therefore always bounded by
 // something, whatever the number is.
 //
-// Four is generous rather than tight. Measured across cobra, clap and Typer
-// tools including kubectl, docker and gh, the deepest surface is three words
-// past the binary, and raising the bound to eight changes no tree at all.
-// Raise it through [Options] for a surface that nests further.
+// Four is meant to be generous rather than tight, sitting above how deep
+// cobra, clap and Typer tools such as kubectl, docker and gh nest. A tree the
+// bound cuts says so: the command it stopped at carries [Node].Bounded. Raise
+// it through [Options] for a surface that nests further.
 const DefaultMaxDepth = 4
 
 // helpTimeout bounds one invocation. A var rather than a const so a test can
@@ -179,8 +179,8 @@ type Node struct {
 	// Unread marks a command that was named but not read, so its children are
 	// missing rather than absent. Call [ExtractAt] with its Path to read them.
 	//
-	// A surface can be too large to read whole: aws is 438 services over 19,292
-	// operations, and reading all of it costs twelve seconds to show one screen.
+	// A surface can be too large to read whole. aws has hundreds of services,
+	// and reading every one up front costs a call per service to show one screen.
 	Unread bool `json:"unread,omitempty"`
 
 	// Bounded marks a command the walk stopped at, under [Options].MaxDepth or a

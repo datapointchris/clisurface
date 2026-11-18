@@ -198,7 +198,7 @@ func TestAwsKeepsFlagsOutOfTheTree(t *testing.T) {
 }
 
 // A surface too large to read whole names its children without reading them.
-// Reading all 438 of aws's services costs twelve seconds to show one screen.
+// Reading every one of aws's services costs a call per service to show one screen.
 func TestALazyRecipeNamesChildrenWithoutReadingThem(t *testing.T) {
 	var asked []string
 	run := func(_ string, args ...string) string {
